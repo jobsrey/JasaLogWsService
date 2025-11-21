@@ -1,0 +1,23 @@
+{
+  "name": "ais-websocket-server",
+  "version": "1.0.0",
+  "description": "AIS WebSocket Server for ship tracking",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [
+    "ais",
+    "websocket",
+    "ship-tracking"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
