@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 
 // Konfigurasi WebSocket Server
-const WS_PORT = 80801;
+const WS_PORT = 8080;
 
 // Storage untuk data kapal
 const shipsData = new Map();
