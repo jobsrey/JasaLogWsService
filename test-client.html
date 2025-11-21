@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Test Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .connecting { background-color: #fff3cd; color: #856404; }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+            margin: 10px 0;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
+        input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 300px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 WebSocket Test Client</h1>
+        
+        <div>
+            <label for="wsUrl">WebSocket URL:</label><br>
+            <input type="text" id="wsUrl" value="ws://localhost:8080" placeholder="ws://localhost:8080">
+            <button onclick="connect()">Connect</button>
+            <button onclick="disconnect()">Disconnect</button>
+        </div>
+        
+        <div id="status" class="status disconnected">❌ Disconnected</div>
+        
+        <div>
+            <h3>Actions:</h3>
+            <button onclick="identifyAsViewer()" id="viewerBtn" disabled>Identify as Viewer</button>
+            <button onclick="getAllShips()" id="shipsBtn" disabled>Get All Ships</button>
+            <button onclick="sendTestAIS()" id="aisBtn" disabled>Send Test AIS Data</button>
+            <button onclick="clearLog()">Clear Log</button>
+        </div>
+        
+        <div>
+            <h3>Message Log:</h3>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let isConnected = false;
+
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function updateStatus(status, className) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = status;
+            statusDiv.className = `status ${className}`;
+        }
+
+        function updateButtons(connected) {
+            document.getElementById('viewerBtn').disabled = !connected;
+            document.getElementById('shipsBtn').disabled = !connected;
+            document.getElementById('aisBtn').disabled = !connected;
+        }
+
+        function connect() {
+            const url = document.getElementById('wsUrl').value;
+            
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('❌ Already connected!');
+                return;
+            }
+
+            log(`🔄 Connecting to ${url}...`);
+            updateStatus('🔄 Connecting...', 'connecting');
+
+            ws = new WebSocket(url);
+
+            ws.onopen = function() {
+                log('✅ Connected successfully!');
+                updateStatus('✅ Connected', 'connected');
+                isConnected = true;
+                updateButtons(true);
+            };
+
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                log(`📥 Received: ${JSON.stringify(data, null, 2)}`);
+            };
+
+            ws.onclose = function() {
+                log('❌ Connection closed');
+                updateStatus('❌ Disconnected', 'disconnected');
+                isConnected = false;
+                updateButtons(false);
+            };
+
+            ws.onerror = function(error) {
+                log(`🚨 Error: ${error.message || 'Connection failed'}`);
+                updateStatus('🚨 Error', 'disconnected');
+                isConnected = false;
+                updateButtons(false);
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                log('🔌 Disconnecting...');
+            }
+        }
+
+        function identifyAsViewer() {
+            if (!isConnected) return;
+            
+            const message = {
+                type: 'identify',
+                clientType: 'viewer'
+            };
+            
+            ws.send(JSON.stringify(message));
+            log(`📤 Sent: ${JSON.stringify(message)}`);
+        }
+
+        function getAllShips() {
+            if (!isConnected) return;
+            
+            const message = {
+                type: 'get_all_ships'
+            };
+            
+            ws.send(JSON.stringify(message));
+            log(`📤 Sent: ${JSON.stringify(message)}`);
+        }
+
+        function sendTestAIS() {
+            if (!isConnected) return;
+            
+            // First identify as sender
+            const identifyMessage = {
+                type: 'identify',
+                clientType: 'sender'
+            };
+            ws.send(JSON.stringify(identifyMessage));
+            log(`📤 Sent: ${JSON.stringify(identifyMessage)}`);
+            
+            // Then send test AIS data
+            setTimeout(() => {
+                const aisMessage = {
+                    type: 'ais_data',
+                    decoded: {
+                        mmsi: 123456789,
+                        lat: -6.2088,
+                        lon: 106.8456,
+                        speed: 12.5,
+                        course: 45,
+                        heading: 50,
+                        status: 0,
+                        shipname: 'TEST VESSEL',
+                        callsign: 'TEST123',
+                        shiptype: 70,
+                        destination: 'JAKARTA'
+                    }
+                };
+                
+                ws.send(JSON.stringify(aisMessage));
+                log(`📤 Sent: ${JSON.stringify(aisMessage, null, 2)}`);
+            }, 100);
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        // Auto-connect on page load
+        window.onload = function() {
+            log('🚀 WebSocket Test Client loaded');
+        };
+    </script>
+</body>
+</html>

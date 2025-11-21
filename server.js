@@ -1,18 +1,22 @@
 const WebSocket = require('ws');
 
 // Konfigurasi WebSocket Server
-const WS_PORT = 8080;
+const WS_PORT = process.env.PORT || 8080;
+const WS_HOST = process.env.HOST || '0.0.0.0';
 
 // Storage untuk data kapal
 const shipsData = new Map();
 
 // Buat WebSocket Server
-const wss = new WebSocket.Server({ port: WS_PORT });
+const wss = new WebSocket.Server({ 
+  port: WS_PORT,
+  host: WS_HOST
+});
 
 console.log('\n' + '='.repeat(70));
 console.log('🌐 AIS WEBSOCKET SERVER');
 console.log('='.repeat(70));
-console.log(`WebSocket Server : ws://localhost:${WS_PORT}`);
+console.log(`WebSocket Server : ws://${WS_HOST}:${WS_PORT}`);
 console.log(`Status           : RUNNING`);
 console.log('='.repeat(70) + '\n');
 
