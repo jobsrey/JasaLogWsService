@@ -7,8 +7,8 @@ const WS_HOST = process.env.HOST || '0.0.0.0';
 
 // Konfigurasi MongoDB
 const MONGODB_URI = 'mongodb://root:ldJLy9txqwa4QS0wgua8tjssZVjHwyTMzA98LhzBIvB54k2FG45odwnMr4LXTxbX@vo8ggww8ks0w484so8ow0swk:27017/?directConnection=true';
-const DB_NAME = 'ais_tracking';
-const COLLECTION_NAME = 'ships';
+const DB_NAME = 'app_jasalog';
+const COLLECTION_NAME = 'vessel';
 
 // MongoDB client
 let mongoClient = null;
