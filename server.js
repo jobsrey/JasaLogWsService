@@ -1,11 +1,77 @@
 const WebSocket = require('ws');
+const { MongoClient } = require('mongodb');
 
 // Konfigurasi WebSocket Server
 const WS_PORT = process.env.PORT || 8080;
 const WS_HOST = process.env.HOST || '0.0.0.0';
 
-// Storage untuk data kapal
+// Konfigurasi MongoDB
+const MONGODB_URI = 'mongodb://root:ldJLy9txqwa4QS0wgua8tjssZVjHwyTMzA98LhzBIvB54k2FG45odwnMr4LXTxbX@194.233.93.64:27017/?directConnection=true';
+const DB_NAME = 'ais_tracking';
+const COLLECTION_NAME = 'ships';
+
+// MongoDB client
+let mongoClient = null;
+let db = null;
+let shipsCollection = null;
+
+// Storage untuk data kapal (in-memory cache)
 const shipsData = new Map();
+
+// Fungsi untuk koneksi MongoDB
+async function connectMongoDB() {
+  try {
+    mongoClient = new MongoClient(MONGODB_URI);
+    await mongoClient.connect();
+    db = mongoClient.db(DB_NAME);
+    shipsCollection = db.collection(COLLECTION_NAME);
+    
+    // Buat index untuk MMSI untuk performa yang lebih baik
+    await shipsCollection.createIndex({ mmsi: 1 }, { unique: true });
+    
+    console.log('✓ MongoDB connected successfully');
+    console.log(`  Database: ${DB_NAME}`);
+    console.log(`  Collection: ${COLLECTION_NAME}`);
+  } catch (error) {
+    console.error('❌ MongoDB connection failed:', error.message);
+    throw error;
+  }
+}
+
+// Fungsi untuk upsert data kapal ke MongoDB
+async function upsertShipToMongoDB(shipData) {
+  if (!shipsCollection || !shipData || !shipData.mmsi) {
+    return null;
+  }
+
+  try {
+    const filter = { mmsi: shipData.mmsi };
+    const update = {
+      $set: {
+        ...shipData,
+        lastUpdate: new Date().toISOString()
+      }
+    };
+    
+    const options = {
+      upsert: true,
+      returnDocument: 'after'
+    };
+    
+    const result = await shipsCollection.findOneAndUpdate(filter, update, options);
+    
+    if (result.lastErrorObject?.upserted) {
+      console.log(`  📝 MongoDB: Inserted new ship MMSI ${shipData.mmsi}`);
+    } else {
+      console.log(`  🔄 MongoDB: Updated existing ship MMSI ${shipData.mmsi}`);
+    }
+    
+    return result.value;
+  } catch (error) {
+    console.error(`❌ MongoDB upsert error for MMSI ${shipData.mmsi}:`, error.message);
+    return null;
+  }
+}
 
 // Buat WebSocket Server
 const wss = new WebSocket.Server({ 
@@ -125,26 +191,29 @@ function extractShipData(decodedData) {
   return shipData;
 }
 
-// Fungsi untuk update data kapal
-function updateShipData(shipData) {
+// Fungsi untuk update data kapal (in-memory dan MongoDB)
+async function updateShipData(shipData) {
   if (!shipData || !shipData.mmsi) {
-    return;
+    return null;
   }
 
   const mmsi = shipData.mmsi.toString();
   
-  // Ambil data existing atau buat baru
+  // Ambil data existing dari memory atau buat baru
   let existingData = shipsData.get(mmsi) || { mmsi };
   
-  // Merge data baru dengan data existing
+  // Merge data baru dengan data existing menggunakan spread operator
   existingData = {
     ...existingData,
     ...shipData,
     lastUpdate: new Date().toISOString()
   };
   
-  // Simpan kembali
+  // Simpan ke memory cache
   shipsData.set(mmsi, existingData);
+  
+  // Simpan ke MongoDB (upsert)
+  const mongoResult = await upsertShipToMongoDB(existingData);
   
   return existingData;
 }
@@ -154,7 +223,7 @@ wss.on('connection', (ws, req) => {
   const clientIp = req.socket.remoteAddress;
   console.log(`[${getTimeStamp()}] ✓ Client connected: ${clientIp}`);
   
-  ws.on('message', (message) => {
+  ws.on('message', async (message) => {
     try {
       const data = JSON.parse(message.toString());
       
@@ -181,19 +250,25 @@ wss.on('connection', (ws, req) => {
         const shipData = extractShipData(data.decoded);
         
         if (shipData) {
-          const updatedShip = updateShipData(shipData);
-          
-          // Broadcast ke semua viewer
-          const clientCount = broadcastToClients({
-            type: 'ship_update',
-            ship: updatedShip
-          });
-          
-          console.log(`[${getTimeStamp()}] 📡 AIS Data: MMSI ${shipData.mmsi} | Broadcasted to ${clientCount} clients`);
-          
-          // Log jika ada posisi
-          if (shipData.lat && shipData.lon) {
-            console.log(`  Position: ${shipData.lat.toFixed(6)}, ${shipData.lon.toFixed(6)} | Speed: ${shipData.speed} knots`);
+          try {
+            const updatedShip = await updateShipData(shipData);
+            
+            if (updatedShip) {
+              // Broadcast ke semua viewer
+              const clientCount = broadcastToClients({
+                type: 'ship_update',
+                ship: updatedShip
+              });
+              
+              console.log(`[${getTimeStamp()}] 📡 AIS Data: MMSI ${shipData.mmsi} | Broadcasted to ${clientCount} clients`);
+              
+              // Log jika ada posisi
+              if (shipData.lat && shipData.lon) {
+                console.log(`  Position: ${shipData.lat.toFixed(6)}, ${shipData.lon.toFixed(6)} | Speed: ${shipData.speed} knots`);
+              }
+            }
+          } catch (error) {
+            console.error(`[${getTimeStamp()}] ❌ Error updating ship data:`, error.message);
           }
         }
       }
@@ -276,12 +351,22 @@ setInterval(() => {
 }, 60000);
 
 // Handle shutdown
-function shutdown() {
+async function shutdown() {
   console.log('\n\n' + '='.repeat(70));
   console.log('🛑 SHUTTING DOWN WEBSOCKET SERVER');
   console.log('='.repeat(70));
   console.log(`Total ships tracked: ${shipsData.size}`);
   console.log('='.repeat(70) + '\n');
+  
+  // Tutup koneksi MongoDB
+  if (mongoClient) {
+    try {
+      await mongoClient.close();
+      console.log('✓ MongoDB connection closed');
+    } catch (error) {
+      console.error('❌ Error closing MongoDB connection:', error.message);
+    }
+  }
   
   wss.close(() => {
     console.log('WebSocket Server closed');
@@ -292,5 +377,19 @@ function shutdown() {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-console.log('💡 WebSocket Server ready to receive AIS data');
-console.log('   Waiting for connections...\n');
+// Inisialisasi server
+async function initializeServer() {
+  try {
+    // Koneksi ke MongoDB
+    await connectMongoDB();
+    
+    console.log('💡 WebSocket Server ready to receive AIS data');
+    console.log('   Waiting for connections...\n');
+  } catch (error) {
+    console.error('❌ Server initialization failed:', error.message);
+    process.exit(1);
+  }
+}
+
+// Jalankan inisialisasi
+initializeServer();
