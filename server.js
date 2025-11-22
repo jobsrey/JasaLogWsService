@@ -6,7 +6,7 @@ const WS_PORT = process.env.PORT || 8080;
 const WS_HOST = process.env.HOST || '0.0.0.0';
 
 // Konfigurasi MongoDB
-const MONGODB_URI = 'mongodb://root:ldJLy9txqwa4QS0wgua8tjssZVjHwyTMzA98LhzBIvB54k2FG45odwnMr4LXTxbX@194.233.93.64:27017/?directConnection=true';
+const MONGODB_URI = 'mongodb://root:ldJLy9txqwa4QS0wgua8tjssZVjHwyTMzA98LhzBIvB54k2FG45odwnMr4LXTxbX@vo8ggww8ks0w484so8ow0swk:27017/?directConnection=true';
 const DB_NAME = 'ais_tracking';
 const COLLECTION_NAME = 'ships';
 
