@@ -7,7 +7,7 @@ const WS_PORT = process.env.PORT_WSS || 8080;
 const WS_HOST = process.env.HOST_WSS || '0.0.0.0';
 
 // Konfigurasi Debug - Set ke false untuk disable validasi device (untuk debugging)
-const ENABLE_DEVICE_VALIDATION = true; // Ubah ke false untuk skip validasi device
+const ENABLE_DEVICE_VALIDATION = false; // Ubah ke false untuk skip validasi device
 
 // Konfigurasi MongoDB
 const MONGODB_URI = 'mongodb://root:ldJLy9txqwa4QS0wgua8tjssZVjHwyTMzA98LhzBIvB54k2FG45odwnMr4LXTxbX@vo8ggww8ks0w484so8ow0swk:27017/?directConnection=true';
