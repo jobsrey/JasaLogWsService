@@ -1,7 +1,8 @@
 {
   "name": "ais-websocket-server",
   "version": "1.0.0",
-  "description": "AIS WebSocket Server for ship tracking",
+  "description": "AIS WebSocket Server for real-time ship tracking",
+  "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -15,6 +16,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "net": "^1.0.2",
+    "serialport": "^12.0.0",
+    "@serialport/parser-readline": "^12.0.0",
+    "macaddress": "^0.5.3",
     "mongodb": "^7.0.0",
     "ws": "^8.18.0"
   },
