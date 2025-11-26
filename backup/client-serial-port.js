@@ -119,7 +119,6 @@ function connectWebSocket() {
       type: 'identify',
       clientType: 'sender',
       app_key: APP_KEY,
-      user_key: USER_KEY,
       mac_address: deviceMacAddress
     }));
     console.log(`[${getTimeStamp()}] ✓ Sent identify message as sender`);

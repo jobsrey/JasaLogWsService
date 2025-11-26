@@ -7,7 +7,7 @@ const WS_PORT = process.env.PORT_WSS || 8080;
 const WS_HOST = process.env.HOST_WSS || '0.0.0.0';
 
 // Konfigurasi Debug - Set ke false untuk disable validasi device (untuk debugging)
-const ENABLE_DEVICE_VALIDATION = true; // Ubah ke false untuk skip validasi device
+const ENABLE_DEVICE_VALIDATION = false; // Ubah ke false untuk skip validasi device
 
 // Konfigurasi MongoDB
 const MONGODB_URI = 'mongodb://root:ldJLy9txqwa4QS0wgua8tjssZVjHwyTMzA98LhzBIvB54k2FG45odwnMr4LXTxbX@194.233.93.64:27017/?directConnection=true';
@@ -15,7 +15,6 @@ const DB_NAME = 'app_jasalog';
 const COLLECTION_NAME = 'vessel';
 const DEVICE_COLLECTION_NAME = 'device';
 const DEVICE_LOCATION_COLLECTION_NAME = 'device_location';
-const SENSORS_COLLECTION_NAME = 'sensors';
 
 // MongoDB client
 let mongoClient = null;
@@ -23,7 +22,6 @@ let db = null;
 let shipsCollection = null;
 let deviceCollection = null;
 let deviceLocationCollection = null;
-let sensorsCollection = null;
 
 // Storage untuk data kapal (in-memory cache)
 const shipsData = new Map();
@@ -40,7 +38,6 @@ async function connectMongoDB() {
     shipsCollection = db.collection(COLLECTION_NAME);
     deviceCollection = db.collection(DEVICE_COLLECTION_NAME);
     deviceLocationCollection = db.collection(DEVICE_LOCATION_COLLECTION_NAME);
-    sensorsCollection = db.collection(SENSORS_COLLECTION_NAME);
     
     // Buat index untuk MMSI untuk performa yang lebih baik
     await shipsCollection.createIndex({ mmsi: 1 }, { unique: true });
@@ -51,15 +48,11 @@ async function connectMongoDB() {
     // Buat index untuk device location collection
     await deviceLocationCollection.createIndex({ app_key: 1, mac_address: 1 }, { unique: true });
     
-    // Buat index untuk sensors collection
-    await sensorsCollection.createIndex({ id: 1, userId: 1 }, { unique: true });
-    
     console.log('✓ MongoDB connected successfully');
     console.log(`  Database: ${DB_NAME}`);
     console.log(`  Collection: ${COLLECTION_NAME}`);
     console.log(`  Device Collection: ${DEVICE_COLLECTION_NAME}`);
     console.log(`  Device Location Collection: ${DEVICE_LOCATION_COLLECTION_NAME}`);
-    console.log(`  Sensors Collection: ${SENSORS_COLLECTION_NAME}`);
   } catch (error) {
     console.error('❌ MongoDB connection failed:', error.message);
     throw error;
@@ -96,39 +89,6 @@ async function validateDevice(appKey, macAddress) {
   } catch (error) {
     console.error(`[${getTimeStamp()}] ❌ Error validasi device:`, error.message);
     return false;
-  }
-}
-
-// Fungsi untuk validasi sensor berdasarkan app_key dan user_key dari sensors table
-async function validateSensor(appKey, userKey) {
-  // Jika validasi device dinonaktifkan (untuk debugging)
-  if (!ENABLE_DEVICE_VALIDATION) {
-    console.log(`[${getTimeStamp()}] 🔧 DEBUG MODE: Sensor validation DISABLED - allowing all sensors`);
-    console.log(`[${getTimeStamp()}] 🔧 Sensor info: APP_KEY=${appKey} | USER_KEY=${userKey}`);
-    return { valid: true, sensorId: appKey, userId: userKey };
-  }
-
-  if (!sensorsCollection || !appKey || !userKey) {
-    console.log(`[${getTimeStamp()}] ⚠️  Validasi sensor gagal: app_key atau user_key kosong`);
-    return { valid: false, sensorId: null, userId: null };
-  }
-
-  try {
-    const sensor = await sensorsCollection.findOne({
-      id: appKey,
-      userId: userKey
-    });
-
-    if (sensor) {
-      console.log(`[${getTimeStamp()}] ✓ Sensor valid: APP_KEY=${appKey} | USER_KEY=${userKey}`);
-      return { valid: true, sensorId: sensor.id, userId: sensor.userId };
-    } else {
-      console.log(`[${getTimeStamp()}] ❌ Sensor tidak ditemukan: APP_KEY=${appKey} | USER_KEY=${userKey}`);
-      return { valid: false, sensorId: null, userId: null };
-    }
-  } catch (error) {
-    console.error(`[${getTimeStamp()}] ❌ Error validasi sensor:`, error.message);
-    return { valid: false, sensorId: null, userId: null };
   }
 }
 
@@ -256,29 +216,13 @@ function getTimeStamp() {
   });
 }
 
-// Fungsi untuk broadcast data ke semua client dengan filter berdasarkan clientType
-function broadcastToClients(data, senderInfo = null) {
+// Fungsi untuk broadcast data ke semua client
+function broadcastToClients(data) {
   const message = JSON.stringify(data);
   let clientCount = 0;
   
   wss.clients.forEach((client) => {
-    if (client.readyState !== WebSocket.OPEN) return;
-    
-    // Handle berbagai tipe viewer
-    let shouldSend = false;
-    
-    if (client.clientType === 'viewer') {
-      // Viewer standar - terima semua data
-      shouldSend = true;
-    } else if (client.clientType === 'viewer-by-user' && senderInfo) {
-      // Viewer-by-user - hanya terima data dari user yang sama
-      shouldSend = client.userKey === senderInfo.userKey;
-    } else if (client.clientType === 'viewer-by-device' && senderInfo) {
-      // Viewer-by-device - hanya terima data dari app_key yang diminta
-      shouldSend = client.appKey === senderInfo.appKey;
-    }
-    
-    if (shouldSend) {
+    if (client.readyState === WebSocket.OPEN && client.clientType === 'viewer') {
       client.send(message);
       clientCount++;
     }
@@ -287,8 +231,8 @@ function broadcastToClients(data, senderInfo = null) {
   return clientCount;
 }
 
-// Fungsi untuk broadcast device location ke semua client dengan filter berdasarkan clientType
-function broadcastDeviceLocationToClients(deviceLocation, senderInfo = null) {
+// Fungsi untuk broadcast device location ke semua client
+function broadcastDeviceLocationToClients(deviceLocation) {
   const message = JSON.stringify({
     type: 'device_location_update',
     device: deviceLocation
@@ -296,23 +240,7 @@ function broadcastDeviceLocationToClients(deviceLocation, senderInfo = null) {
   let clientCount = 0;
   
   wss.clients.forEach((client) => {
-    if (client.readyState !== WebSocket.OPEN) return;
-    
-    // Handle berbagai tipe viewer
-    let shouldSend = false;
-    
-    if (client.clientType === 'viewer') {
-      // Viewer standar - terima semua data
-      shouldSend = true;
-    } else if (client.clientType === 'viewer-by-user' && senderInfo) {
-      // Viewer-by-user - hanya terima data dari user yang sama
-      shouldSend = client.userKey === senderInfo.userKey;
-    } else if (client.clientType === 'viewer-by-device' && senderInfo) {
-      // Viewer-by-device - hanya terima data dari app_key yang diminta
-      shouldSend = client.appKey === senderInfo.appKey;
-    }
-    
-    if (shouldSend) {
+    if (client.readyState === WebSocket.OPEN && client.clientType === 'viewer') {
       client.send(message);
       clientCount++;
     }
@@ -322,7 +250,7 @@ function broadcastDeviceLocationToClients(deviceLocation, senderInfo = null) {
 }
 
 // Fungsi untuk extract data penting dari AIS
-function extractShipData(decodedData, sensorId = null) {
+function extractShipData(decodedData) {
   if (!decodedData || !decodedData.mmsi) {
     return null;
   }
@@ -334,8 +262,6 @@ function extractShipData(decodedData, sensorId = null) {
     // Add country information
     country: decodedData.country || null,
     countryCode: decodedData.countryCode || null,
-    // Add sensor information
-    sensorId: sensorId || null,
   };
 
   // Data posisi (Message Type 1, 2, 3, 18, 19)
@@ -445,13 +371,12 @@ wss.on('connection', (ws, req) => {
       
       // PRIORITAS 1: Handle identify message PERTAMA
       if (data.type === 'identify') {
-        ws.clientType = data.clientType; // 'sender', 'viewer', 'viewer-by-user', 'viewer-by-device'
+        ws.clientType = data.clientType; // 'sender' atau 'viewer'
         console.log(`[${getTimeStamp()}] ✓✓✓ CLIENT IDENTIFIED AS: ${data.clientType.toUpperCase()} ✓✓✓`);
         console.log(`[${getTimeStamp()}]     App Key: ${data.app_key || 'N/A'}`);
-        console.log(`[${getTimeStamp()}]     User Key: ${data.user_key || 'N/A'}`);
         console.log(`[${getTimeStamp()}]     MAC: ${data.mac_address || 'N/A'}`);
         
-        // Handle viewer standar
+        // Jika viewer, langsung set sebagai validated dan kirim data
         if (data.clientType === 'viewer') {
           ws.isValidated = true;
           const allShips = Array.from(shipsData.values());
@@ -466,121 +391,74 @@ wss.on('connection', (ws, req) => {
           console.log(`[${getTimeStamp()}] Sent ${allShips.length} ships and ${allDeviceLocations.length} devices to viewer`);
         }
         
-        // Handle viewer-by-user (tidak perlu validasi, hanya simpan user_key)
-        if (data.clientType === 'viewer-by-user' && data.user_key) {
-          ws.isValidated = true;
-          ws.userKey = data.user_key;
-          // Filter ships berdasarkan user_key
-          const userShips = Array.from(shipsData.values()).filter(ship => ship.sensorId && ship.sensorId.startsWith(data.user_key));
-          const userDeviceLocations = Array.from(deviceLocations.values());
-          ws.send(JSON.stringify({
-            type: 'initial_data',
-            ships: userShips,
-            devices: userDeviceLocations,
-            count: userShips.length,
-            deviceCount: userDeviceLocations.length,
-            filterType: 'viewer-by-user',
-            userId: data.user_key
-          }));
-          console.log(`[${getTimeStamp()}] Sent ${userShips.length} ships (filtered by user) and ${userDeviceLocations.length} devices to viewer-by-user`);
-        }
-        
-        // Handle viewer-by-device (tidak perlu validasi, hanya simpan app_key)
-        if (data.clientType === 'viewer-by-device' && data.app_key) {
-          ws.isValidated = true;
-          ws.appKey = data.app_key;
-          // Filter ships berdasarkan app_key
-          const deviceShips = Array.from(shipsData.values()).filter(ship => ship.sensorId === data.app_key);
-          const deviceLocation = Array.from(deviceLocations.values()).filter(dev => dev.app_key === data.app_key);
-          ws.send(JSON.stringify({
-            type: 'initial_data',
-            ships: deviceShips,
-            devices: deviceLocation,
-            count: deviceShips.length,
-            deviceCount: deviceLocation.length,
-            filterType: 'viewer-by-device',
-            appKey: data.app_key
-          }));
-          console.log(`[${getTimeStamp()}] Sent ${deviceShips.length} ships (filtered by device) and ${deviceLocation.length} devices to viewer-by-device`);
-        }
-        
-        // Handle sender - validasi sensor dengan app_key dan user_key
-        if (data.clientType === 'sender' && data.app_key && data.user_key) {
-          const sensorValidation = await validateSensor(data.app_key, data.user_key);
+        // Jika sender, validasi device jika ada app_key dan mac_address
+        if (data.clientType === 'sender' && data.app_key && data.mac_address) {
+          const isValid = await validateDevice(data.app_key, data.mac_address);
           
-          if (!sensorValidation.valid) {
+          if (!isValid) {
             if (ENABLE_DEVICE_VALIDATION) {
-              console.log(`[${getTimeStamp()}] 🚫 Sensor tidak valid, disconnect: ${clientIp}`);
-              ws.close(1008, 'Sensor not authorized');
+              console.log(`[${getTimeStamp()}] 🚫 Device tidak valid, disconnect: ${clientIp}`);
+              ws.close(1008, 'Device not authorized');
               return;
             } else {
-              console.log(`[${getTimeStamp()}] 🔧 DEBUG MODE: Sensor validation failed but allowing connection anyway`);
+              console.log(`[${getTimeStamp()}] 🔧 DEBUG MODE: Device validation failed but allowing connection anyway`);
             }
           }
           
           ws.isValidated = true;
-          ws.sensorInfo = {
-            sensorId: sensorValidation.sensorId,
-            userId: sensorValidation.userId,
+          ws.deviceInfo = {
             app_key: data.app_key,
-            user_key: data.user_key,
             mac_address: data.mac_address
           };
           
           if (ENABLE_DEVICE_VALIDATION) {
-            console.log(`[${getTimeStamp()}] ✓ Sensor authorized: ${data.app_key}`);
+            console.log(`[${getTimeStamp()}] ✓ Device authorized: ${data.app_key}`);
           } else {
-            console.log(`[${getTimeStamp()}] 🔧 DEBUG MODE: Sensor accepted without validation: ${data.app_key}`);
+            console.log(`[${getTimeStamp()}] 🔧 DEBUG MODE: Device accepted without validation: ${data.app_key}`);
           }
         }
         return;
       }
       
-      // PRIORITAS 2: Validasi sensor untuk sender yang belum tervalidasi
-      if (!ws.isValidated && data.app_key && data.user_key && data.type !== 'identify') {
-        const sensorValidation = await validateSensor(data.app_key, data.user_key);
+      // PRIORITAS 2: Validasi device untuk sender yang belum tervalidasi
+      if (!ws.isValidated && data.app_key && data.mac_address) {
+        const isValid = await validateDevice(data.app_key, data.mac_address);
         
-        if (!sensorValidation.valid) {
+        if (!isValid) {
           if (ENABLE_DEVICE_VALIDATION) {
-            console.log(`[${getTimeStamp()}] 🚫 Sensor tidak valid, disconnect: ${clientIp}`);
-            ws.close(1008, 'Sensor not authorized');
+            console.log(`[${getTimeStamp()}] 🚫 Device tidak valid, disconnect: ${clientIp}`);
+            ws.close(1008, 'Device not authorized');
             return;
           } else {
-            console.log(`[${getTimeStamp()}] 🔧 DEBUG MODE: Sensor validation failed but allowing connection anyway`);
+            console.log(`[${getTimeStamp()}] 🔧 DEBUG MODE: Device validation failed but allowing connection anyway`);
           }
         }
         
         ws.isValidated = true;
-        ws.sensorInfo = {
-          sensorId: sensorValidation.sensorId,
-          userId: sensorValidation.userId,
+        ws.deviceInfo = {
           app_key: data.app_key,
-          user_key: data.user_key,
           mac_address: data.mac_address
         };
         
         if (ENABLE_DEVICE_VALIDATION) {
-          console.log(`[${getTimeStamp()}] ✓ Sensor authorized: ${data.app_key}`);
+          console.log(`[${getTimeStamp()}] ✓ Device authorized: ${data.app_key}`);
         } else {
-          console.log(`[${getTimeStamp()}] 🔧 DEBUG MODE: Sensor accepted without validation: ${data.app_key}`);
+          console.log(`[${getTimeStamp()}] 🔧 DEBUG MODE: Device accepted without validation: ${data.app_key}`);
         }
       }
       
       // PRIORITAS 3: Cek validasi untuk pesan non-identify
       if (!ws.isValidated && data.type !== 'identify') {
         if (ENABLE_DEVICE_VALIDATION) {
-          console.log(`[${getTimeStamp()}] 🚫 Pesan diterima sebelum validasi sensor, disconnect: ${clientIp}`);
-          ws.close(1008, 'Sensor validation required');
+          console.log(`[${getTimeStamp()}] 🚫 Pesan diterima sebelum validasi device, disconnect: ${clientIp}`);
+          ws.close(1008, 'Device validation required');
           return;
         } else {
-          console.log(`[${getTimeStamp()}] 🔧 DEBUG MODE: Accepting message without sensor validation`);
+          console.log(`[${getTimeStamp()}] 🔧 DEBUG MODE: Accepting message without device validation`);
           // Set sebagai tervalidasi untuk debug mode
           ws.isValidated = true;
-          ws.sensorInfo = {
-            sensorId: data.app_key || 'DEBUG_MODE',
-            userId: data.user_key || 'DEBUG_MODE',
+          ws.deviceInfo = {
             app_key: data.app_key || 'DEBUG_MODE',
-            user_key: data.user_key || 'DEBUG_MODE',
             mac_address: data.mac_address || 'DEBUG_MODE'
           };
         }
@@ -592,14 +470,6 @@ wss.on('connection', (ws, req) => {
       // Handle data dari sender (AIS data dan device location)
       if (ws.clientType === 'sender' && ws.isValidated) {
         console.log(`[${getTimeStamp()}] ✓ Processing sender data...`);
-        
-        // Prepare sender info untuk broadcast filtering
-        const senderInfo = {
-          appKey: ws.sensorInfo?.app_key,
-          userKey: ws.sensorInfo?.user_key,
-          sensorId: ws.sensorInfo?.sensorId
-        };
-        
         // Handle device location jika ada
         if (data.deviceLocation) {
           try {
@@ -617,8 +487,8 @@ wss.on('connection', (ws, req) => {
             const updatedDeviceLocation = await updateDeviceLocation(deviceLocationData);
             
             if (updatedDeviceLocation) {
-              // Broadcast device location dengan filter
-              const clientCount = broadcastDeviceLocationToClients(updatedDeviceLocation, senderInfo);
+              // Broadcast device location ke semua viewer
+              const clientCount = broadcastDeviceLocationToClients(updatedDeviceLocation);
               console.log(`[${getTimeStamp()}] 📍 Device Location: ${updatedDeviceLocation.name} | Broadcasted to ${clientCount} clients`);
               console.log(`  Location: ${updatedDeviceLocation.latitude.toFixed(6)}, ${updatedDeviceLocation.longitude.toFixed(6)}`);
             }
@@ -631,20 +501,20 @@ wss.on('connection', (ws, req) => {
         if (data.aisData && Array.isArray(data.aisData)) {
           console.log(`[${getTimeStamp()}] 📦 Received ${data.aisData.length} AIS messages`);
           for (const aisItem of data.aisData) {
-            const shipData = extractShipData(aisItem.decoded, ws.sensorInfo?.sensorId);
+            const shipData = extractShipData(aisItem.decoded);
             
             if (shipData) {
               try {
                 const updatedShip = await updateShipData(shipData);
                 
                 if (updatedShip) {
-                  // Broadcast ke viewer dengan filter
+                  // Broadcast ke semua viewer
                   const clientCount = broadcastToClients({
                     type: 'ship_update',
                     ship: updatedShip
-                  }, senderInfo);
+                  });
                   
-                  console.log(`[${getTimeStamp()}] 📡 AIS Data: MMSI ${shipData.mmsi} | Sensor: ${ws.sensorInfo?.sensorId} | Broadcasted to ${clientCount} clients`);
+                  console.log(`[${getTimeStamp()}] 📡 AIS Data: MMSI ${shipData.mmsi} | Broadcasted to ${clientCount} clients`);
                   
                   // Log country information if available
                   if (shipData.country) {
@@ -665,16 +535,8 @@ wss.on('connection', (ws, req) => {
       }
       
       // Handle request untuk semua data kapal
-      if (data.type === 'get_all_ships' && (ws.clientType === 'viewer' || ws.clientType === 'viewer-by-user' || ws.clientType === 'viewer-by-device')) {
-        let allShips = Array.from(shipsData.values());
-        
-        // Filter berdasarkan tipe viewer
-        if (ws.clientType === 'viewer-by-user' && ws.userKey) {
-          allShips = allShips.filter(ship => ship.sensorId && ship.sensorId.startsWith(ws.userKey));
-        } else if (ws.clientType === 'viewer-by-device' && ws.appKey) {
-          allShips = allShips.filter(ship => ship.sensorId === ws.appKey);
-        }
-        
+      if (data.type === 'get_all_ships' && ws.clientType === 'viewer') {
+        const allShips = Array.from(shipsData.values());
         ws.send(JSON.stringify({
           type: 'all_ships',
           ships: allShips,
@@ -685,29 +547,21 @@ wss.on('connection', (ws, req) => {
       // FALLBACK: Jika tidak ada type tapi ada aisData (untuk kompatibilitas dengan client-serial-port)
       if (!data.type && data.aisData && Array.isArray(data.aisData) && ws.clientType === 'sender' && ws.isValidated) {
         console.log(`[${getTimeStamp()}] 📦 Received ${data.aisData.length} AIS messages (no type field)`);
-        
-        // Prepare sender info untuk broadcast filtering
-        const senderInfo = {
-          appKey: ws.sensorInfo?.app_key,
-          userKey: ws.sensorInfo?.user_key,
-          sensorId: ws.sensorInfo?.sensorId
-        };
-        
         for (const aisItem of data.aisData) {
-          const shipData = extractShipData(aisItem.decoded, ws.sensorInfo?.sensorId);
+          const shipData = extractShipData(aisItem.decoded);
           
           if (shipData) {
             try {
               const updatedShip = await updateShipData(shipData);
               
               if (updatedShip) {
-                // Broadcast ke viewer dengan filter
+                // Broadcast ke semua viewer
                 const clientCount = broadcastToClients({
                   type: 'ship_update',
                   ship: updatedShip
-                }, senderInfo);
+                });
                 
-                console.log(`[${getTimeStamp()}] 📡 AIS Data: MMSI ${shipData.mmsi} | Sensor: ${ws.sensorInfo?.sensorId} | Broadcasted to ${clientCount} clients`);
+                console.log(`[${getTimeStamp()}] 📡 AIS Data: MMSI ${shipData.mmsi} | Broadcasted to ${clientCount} clients`);
                 
                 // Log country information if available
                 if (shipData.country) {
