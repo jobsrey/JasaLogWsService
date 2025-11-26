@@ -372,7 +372,9 @@ wss.on('connection', (ws, req) => {
       // PRIORITAS 1: Handle identify message PERTAMA
       if (data.type === 'identify') {
         ws.clientType = data.clientType; // 'sender' atau 'viewer'
-        console.log(`[${getTimeStamp()}] Client identified as: ${data.clientType}`);
+        console.log(`[${getTimeStamp()}] ✓✓✓ CLIENT IDENTIFIED AS: ${data.clientType.toUpperCase()} ✓✓✓`);
+        console.log(`[${getTimeStamp()}]     App Key: ${data.app_key || 'N/A'}`);
+        console.log(`[${getTimeStamp()}]     MAC: ${data.mac_address || 'N/A'}`);
         
         // Jika viewer, langsung set sebagai validated dan kirim data
         if (data.clientType === 'viewer') {
@@ -462,8 +464,12 @@ wss.on('connection', (ws, req) => {
         }
       }
       
+      // DEBUG: Log semua pesan yang diterima
+      console.log(`[${getTimeStamp()}] 📨 Message received | Type: ${data.type || 'NO_TYPE'} | ClientType: ${ws.clientType || 'UNIDENTIFIED'} | Validated: ${ws.isValidated}`);
+      
       // Handle data dari sender (AIS data dan device location)
       if (ws.clientType === 'sender' && ws.isValidated) {
+        console.log(`[${getTimeStamp()}] ✓ Processing sender data...`);
         // Handle device location jika ada
         if (data.deviceLocation) {
           try {
@@ -493,6 +499,7 @@ wss.on('connection', (ws, req) => {
         
         // Handle AIS data jika ada
         if (data.aisData && Array.isArray(data.aisData)) {
+          console.log(`[${getTimeStamp()}] 📦 Received ${data.aisData.length} AIS messages`);
           for (const aisItem of data.aisData) {
             const shipData = extractShipData(aisItem.decoded);
             
@@ -535,6 +542,42 @@ wss.on('connection', (ws, req) => {
           ships: allShips,
           count: allShips.length
         }));
+      }
+      
+      // FALLBACK: Jika tidak ada type tapi ada aisData (untuk kompatibilitas dengan client-serial-port)
+      if (!data.type && data.aisData && Array.isArray(data.aisData) && ws.clientType === 'sender' && ws.isValidated) {
+        console.log(`[${getTimeStamp()}] 📦 Received ${data.aisData.length} AIS messages (no type field)`);
+        for (const aisItem of data.aisData) {
+          const shipData = extractShipData(aisItem.decoded);
+          
+          if (shipData) {
+            try {
+              const updatedShip = await updateShipData(shipData);
+              
+              if (updatedShip) {
+                // Broadcast ke semua viewer
+                const clientCount = broadcastToClients({
+                  type: 'ship_update',
+                  ship: updatedShip
+                });
+                
+                console.log(`[${getTimeStamp()}] 📡 AIS Data: MMSI ${shipData.mmsi} | Broadcasted to ${clientCount} clients`);
+                
+                // Log country information if available
+                if (shipData.country) {
+                  console.log(`  Country: ${shipData.country} (${shipData.countryCode})`);
+                }
+                
+                // Log jika ada posisi
+                if (shipData.lat && shipData.lon) {
+                  console.log(`  Position: ${shipData.lat.toFixed(6)}, ${shipData.lon.toFixed(6)} | Speed: ${shipData.speed} knots`);
+                }
+              }
+            } catch (error) {
+              console.error(`[${getTimeStamp()}] ❌ Error updating ship data:`, error.message);
+            }
+          }
+        }
       }
       
     } catch (error) {
