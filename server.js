@@ -6,30 +6,23 @@ import { MongoClient } from 'mongodb';
 const WS_PORT = process.env.PORT_WSS || 8080;
 const WS_HOST = process.env.HOST_WSS || '0.0.0.0';
 
-// Konfigurasi Debug - Set ke false untuk disable validasi device (untuk debugging)
-const ENABLE_DEVICE_VALIDATION = true; // Ubah ke false untuk skip validasi device
+// Konfigurasi Debug - Set ke false untuk disable validasi sensor (untuk debugging)
+const ENABLE_DEVICE_VALIDATION = true; // Ubah ke false untuk skip validasi sensor
 
 // Konfigurasi MongoDB
 const MONGODB_URI = 'mongodb://root:ldJLy9txqwa4QS0wgua8tjssZVjHwyTMzA98LhzBIvB54k2FG45odwnMr4LXTxbX@194.233.93.64:27017/?directConnection=true';
 const DB_NAME = 'app_jasalog';
 const COLLECTION_NAME = 'vessel';
-const DEVICE_COLLECTION_NAME = 'device';
-const DEVICE_LOCATION_COLLECTION_NAME = 'device_location';
 const SENSORS_COLLECTION_NAME = 'sensors';
 
 // MongoDB client
 let mongoClient = null;
 let db = null;
 let shipsCollection = null;
-let deviceCollection = null;
-let deviceLocationCollection = null;
 let sensorsCollection = null;
 
 // Storage untuk data kapal (in-memory cache)
 const shipsData = new Map();
-
-// Storage untuk data lokasi device (in-memory cache)
-const deviceLocations = new Map();
 
 // Fungsi untuk koneksi MongoDB
 async function connectMongoDB() {
@@ -38,18 +31,10 @@ async function connectMongoDB() {
     await mongoClient.connect();
     db = mongoClient.db(DB_NAME);
     shipsCollection = db.collection(COLLECTION_NAME);
-    deviceCollection = db.collection(DEVICE_COLLECTION_NAME);
-    deviceLocationCollection = db.collection(DEVICE_LOCATION_COLLECTION_NAME);
     sensorsCollection = db.collection(SENSORS_COLLECTION_NAME);
     
     // Buat index untuk MMSI untuk performa yang lebih baik
     await shipsCollection.createIndex({ mmsi: 1 }, { unique: true });
-    
-    // Buat index untuk device collection
-    await deviceCollection.createIndex({ app_key: 1, mac_address: 1 }, { unique: true });
-    
-    // Buat index untuk device location collection
-    await deviceLocationCollection.createIndex({ app_key: 1, mac_address: 1 }, { unique: true });
     
     // Buat index untuk sensors collection
     await sensorsCollection.createIndex({ id: 1, userId: 1 }, { unique: true });
@@ -57,45 +42,10 @@ async function connectMongoDB() {
     console.log('✓ MongoDB connected successfully');
     console.log(`  Database: ${DB_NAME}`);
     console.log(`  Collection: ${COLLECTION_NAME}`);
-    console.log(`  Device Collection: ${DEVICE_COLLECTION_NAME}`);
-    console.log(`  Device Location Collection: ${DEVICE_LOCATION_COLLECTION_NAME}`);
     console.log(`  Sensors Collection: ${SENSORS_COLLECTION_NAME}`);
   } catch (error) {
     console.error('❌ MongoDB connection failed:', error.message);
     throw error;
-  }
-}
-
-// Fungsi untuk validasi device berdasarkan app_key dan mac_address
-async function validateDevice(appKey, macAddress) {
-  // Jika validasi device dinonaktifkan (untuk debugging)
-  if (!ENABLE_DEVICE_VALIDATION) {
-    console.log(`[${getTimeStamp()}] 🔧 DEBUG MODE: Device validation DISABLED - allowing all devices`);
-    console.log(`[${getTimeStamp()}] 🔧 Device info: ${appKey} | MAC: ${macAddress || 'N/A'}`);
-    return true;
-  }
-
-  if (!deviceCollection || !appKey || !macAddress) {
-    console.log(`[${getTimeStamp()}] ⚠️  Validasi device gagal: app_key atau mac_address kosong`);
-    return false;
-  }
-
-  try {
-    const device = await deviceCollection.findOne({
-      app_key: appKey,
-      mac_address: macAddress
-    });
-
-    if (device) {
-      console.log(`[${getTimeStamp()}] ✓ Device valid: ${appKey} | MAC: ${macAddress}`);
-      return true;
-    } else {
-      console.log(`[${getTimeStamp()}] ❌ Device tidak ditemukan: ${appKey} | MAC: ${macAddress}`);
-      return false;
-    }
-  } catch (error) {
-    console.error(`[${getTimeStamp()}] ❌ Error validasi device:`, error.message);
-    return false;
   }
 }
 
@@ -130,104 +80,6 @@ async function validateSensor(appKey, userKey) {
     console.error(`[${getTimeStamp()}] ❌ Error validasi sensor:`, error.message);
     return { valid: false, sensorId: null, userId: null };
   }
-}
-
-// Fungsi untuk upsert data kapal ke MongoDB
-async function upsertShipToMongoDB(shipData) {
-  if (!shipsCollection || !shipData || !shipData.mmsi) {
-    return null;
-  }
-
-  try {
-    const filter = { mmsi: shipData.mmsi };
-    const update = {
-      $set: {
-        ...shipData,
-        lastUpdate: new Date().toISOString()
-      }
-    };
-    
-    const options = {
-      upsert: true,
-      returnDocument: 'after'
-    };
-    
-    const result = await shipsCollection.findOneAndUpdate(filter, update, options);
-    
-    if (result.lastErrorObject?.upserted) {
-      console.log(`  📝 MongoDB: Inserted new ship MMSI ${shipData.mmsi}`);
-    } else {
-      console.log(`  🔄 MongoDB: Updated existing ship MMSI ${shipData.mmsi}`);
-    }
-    
-    return result.value;
-  } catch (error) {
-    console.error(`❌ MongoDB upsert error for MMSI ${shipData.mmsi}:`, error.message);
-    return null;
-  }
-}
-
-// Fungsi untuk upsert device location ke MongoDB
-async function upsertDeviceLocationToMongoDB(deviceLocationData) {
-  if (!deviceLocationCollection || !deviceLocationData || !deviceLocationData.app_key || !deviceLocationData.mac_address) {
-    return null;
-  }
-
-  try {
-    const filter = { 
-      app_key: deviceLocationData.app_key,
-      mac_address: deviceLocationData.mac_address
-    };
-    const update = {
-      $set: {
-        ...deviceLocationData,
-        lastUpdate: new Date().toISOString()
-      }
-    };
-    
-    const options = {
-      upsert: true,
-      returnDocument: 'after'
-    };
-    
-    const result = await deviceLocationCollection.findOneAndUpdate(filter, update, options);
-    
-    if (result.lastErrorObject?.upserted) {
-      console.log(`  📍 MongoDB: Inserted new device location ${deviceLocationData.name} (${deviceLocationData.app_key})`);
-    } else {
-      console.log(`  🔄 MongoDB: Updated device location ${deviceLocationData.name} (${deviceLocationData.app_key})`);
-    }
-    
-    return result.value;
-  } catch (error) {
-    console.error(`❌ MongoDB device location upsert error for ${deviceLocationData.app_key}:`, error.message);
-    return null;
-  }
-}
-
-// Fungsi untuk update device location (in-memory dan MongoDB)
-async function updateDeviceLocation(deviceLocationData) {
-  if (!deviceLocationData || !deviceLocationData.app_key || !deviceLocationData.mac_address) {
-    return null;
-  }
-
-  const deviceKey = `${deviceLocationData.app_key}_${deviceLocationData.mac_address}`;
-  
-  // Merge data baru dengan data existing
-  const existingData = deviceLocations.get(deviceKey) || {};
-  const updatedData = {
-    ...existingData,
-    ...deviceLocationData,
-    lastUpdate: new Date().toISOString()
-  };
-  
-  // Simpan ke memory cache
-  deviceLocations.set(deviceKey, updatedData);
-  
-  // Simpan ke MongoDB (upsert)
-  const mongoResult = await upsertDeviceLocationToMongoDB(updatedData);
-  
-  return updatedData;
 }
 
 // Buat WebSocket Server
@@ -287,39 +139,6 @@ function broadcastToClients(data, senderInfo = null) {
   return clientCount;
 }
 
-// Fungsi untuk broadcast device location ke semua client dengan filter berdasarkan clientType
-function broadcastDeviceLocationToClients(deviceLocation, senderInfo = null) {
-  const message = JSON.stringify({
-    type: 'device_location_update',
-    device: deviceLocation
-  });
-  let clientCount = 0;
-  
-  wss.clients.forEach((client) => {
-    if (client.readyState !== WebSocket.OPEN) return;
-    
-    // Handle berbagai tipe viewer
-    let shouldSend = false;
-    
-    if (client.clientType === 'viewer') {
-      // Viewer standar - terima semua data
-      shouldSend = true;
-    } else if (client.clientType === 'viewer-by-user' && senderInfo) {
-      // Viewer-by-user - hanya terima data dari user yang sama
-      shouldSend = client.userKey === senderInfo.userKey;
-    } else if (client.clientType === 'viewer-by-device' && senderInfo) {
-      // Viewer-by-device - hanya terima data dari app_key yang diminta
-      shouldSend = client.appKey === senderInfo.appKey;
-    }
-    
-    if (shouldSend) {
-      client.send(message);
-      clientCount++;
-    }
-  });
-  
-  return clientCount;
-}
 
 // Fungsi untuk extract data penting dari AIS
 function extractShipData(decodedData, sensorId = null) {
@@ -404,7 +223,7 @@ function extractShipData(decodedData, sensorId = null) {
   return shipData;
 }
 
-// Fungsi untuk update data kapal (in-memory dan MongoDB)
+// Fungsi untuk update data kapal (in-memory cache)
 async function updateShipData(shipData) {
   if (!shipData || !shipData.mmsi) {
     return null;
@@ -424,9 +243,6 @@ async function updateShipData(shipData) {
   
   // Simpan ke memory cache
   shipsData.set(mmsi, existingData);
-  
-  // Simpan ke MongoDB (upsert)
-  const mongoResult = await upsertShipToMongoDB(existingData);
   
   return existingData;
 }
@@ -455,15 +271,12 @@ wss.on('connection', (ws, req) => {
         if (data.clientType === 'viewer') {
           ws.isValidated = true;
           const allShips = Array.from(shipsData.values());
-          const allDeviceLocations = Array.from(deviceLocations.values());
           ws.send(JSON.stringify({
             type: 'initial_data',
             ships: allShips,
-            devices: allDeviceLocations,
-            count: allShips.length,
-            deviceCount: allDeviceLocations.length
+            count: allShips.length
           }));
-          console.log(`[${getTimeStamp()}] Sent ${allShips.length} ships and ${allDeviceLocations.length} devices to viewer`);
+          console.log(`[${getTimeStamp()}] Sent ${allShips.length} ships to viewer`);
         }
         
         // Handle viewer-by-user (tidak perlu validasi, hanya simpan user_key)
@@ -472,17 +285,14 @@ wss.on('connection', (ws, req) => {
           ws.userKey = data.user_key;
           // Filter ships berdasarkan user_key
           const userShips = Array.from(shipsData.values()).filter(ship => ship.sensorId && ship.sensorId.startsWith(data.user_key));
-          const userDeviceLocations = Array.from(deviceLocations.values());
           ws.send(JSON.stringify({
             type: 'initial_data',
             ships: userShips,
-            devices: userDeviceLocations,
             count: userShips.length,
-            deviceCount: userDeviceLocations.length,
             filterType: 'viewer-by-user',
             userId: data.user_key
           }));
-          console.log(`[${getTimeStamp()}] Sent ${userShips.length} ships (filtered by user) and ${userDeviceLocations.length} devices to viewer-by-user`);
+          console.log(`[${getTimeStamp()}] Sent ${userShips.length} ships (filtered by user) to viewer-by-user`);
         }
         
         // Handle viewer-by-device (tidak perlu validasi, hanya simpan app_key)
@@ -491,17 +301,14 @@ wss.on('connection', (ws, req) => {
           ws.appKey = data.app_key;
           // Filter ships berdasarkan app_key
           const deviceShips = Array.from(shipsData.values()).filter(ship => ship.sensorId === data.app_key);
-          const deviceLocation = Array.from(deviceLocations.values()).filter(dev => dev.app_key === data.app_key);
           ws.send(JSON.stringify({
             type: 'initial_data',
             ships: deviceShips,
-            devices: deviceLocation,
             count: deviceShips.length,
-            deviceCount: deviceLocation.length,
             filterType: 'viewer-by-device',
             appKey: data.app_key
           }));
-          console.log(`[${getTimeStamp()}] Sent ${deviceShips.length} ships (filtered by device) and ${deviceLocation.length} devices to viewer-by-device`);
+          console.log(`[${getTimeStamp()}] Sent ${deviceShips.length} ships (filtered by device) to viewer-by-device`);
         }
         
         // Handle sender - validasi sensor dengan app_key dan user_key
@@ -600,32 +407,6 @@ wss.on('connection', (ws, req) => {
           sensorId: ws.sensorInfo?.sensorId
         };
         
-        // Handle device location jika ada
-        if (data.deviceLocation) {
-          try {
-            const deviceLocationData = {
-              app_key: data.app_key,
-              mac_address: data.mac_address,
-              latitude: data.deviceLocation.latitude,
-              longitude: data.deviceLocation.longitude,
-              name: data.deviceLocation.name,
-              description: data.deviceLocation.description,
-              source: data.source,
-              sourcePort: data.sourcePort
-            };
-            
-            const updatedDeviceLocation = await updateDeviceLocation(deviceLocationData);
-            
-            if (updatedDeviceLocation) {
-              // Broadcast device location dengan filter
-              const clientCount = broadcastDeviceLocationToClients(updatedDeviceLocation, senderInfo);
-              console.log(`[${getTimeStamp()}] 📍 Device Location: ${updatedDeviceLocation.name} | Broadcasted to ${clientCount} clients`);
-              console.log(`  Location: ${updatedDeviceLocation.latitude.toFixed(6)}, ${updatedDeviceLocation.longitude.toFixed(6)}`);
-            }
-          } catch (error) {
-            console.error(`[${getTimeStamp()}] ❌ Error updating device location:`, error.message);
-          }
-        }
         
         // Handle AIS data jika ada
         if (data.aisData && Array.isArray(data.aisData)) {
