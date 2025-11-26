@@ -369,7 +369,56 @@ wss.on('connection', (ws, req) => {
     try {
       const data = JSON.parse(message.toString());
       
-      // Validasi device pada pesan pertama (app_key dan mac_address)
+      // PRIORITAS 1: Handle identify message PERTAMA
+      if (data.type === 'identify') {
+        ws.clientType = data.clientType; // 'sender' atau 'viewer'
+        console.log(`[${getTimeStamp()}] Client identified as: ${data.clientType}`);
+        
+        // Jika viewer, langsung set sebagai validated dan kirim data
+        if (data.clientType === 'viewer') {
+          ws.isValidated = true;
+          const allShips = Array.from(shipsData.values());
+          const allDeviceLocations = Array.from(deviceLocations.values());
+          ws.send(JSON.stringify({
+            type: 'initial_data',
+            ships: allShips,
+            devices: allDeviceLocations,
+            count: allShips.length,
+            deviceCount: allDeviceLocations.length
+          }));
+          console.log(`[${getTimeStamp()}] Sent ${allShips.length} ships and ${allDeviceLocations.length} devices to viewer`);
+        }
+        
+        // Jika sender, validasi device jika ada app_key dan mac_address
+        if (data.clientType === 'sender' && data.app_key && data.mac_address) {
+          const isValid = await validateDevice(data.app_key, data.mac_address);
+          
+          if (!isValid) {
+            if (ENABLE_DEVICE_VALIDATION) {
+              console.log(`[${getTimeStamp()}] 🚫 Device tidak valid, disconnect: ${clientIp}`);
+              ws.close(1008, 'Device not authorized');
+              return;
+            } else {
+              console.log(`[${getTimeStamp()}] 🔧 DEBUG MODE: Device validation failed but allowing connection anyway`);
+            }
+          }
+          
+          ws.isValidated = true;
+          ws.deviceInfo = {
+            app_key: data.app_key,
+            mac_address: data.mac_address
+          };
+          
+          if (ENABLE_DEVICE_VALIDATION) {
+            console.log(`[${getTimeStamp()}] ✓ Device authorized: ${data.app_key}`);
+          } else {
+            console.log(`[${getTimeStamp()}] 🔧 DEBUG MODE: Device accepted without validation: ${data.app_key}`);
+          }
+        }
+        return;
+      }
+      
+      // PRIORITAS 2: Validasi device untuk sender yang belum tervalidasi
       if (!ws.isValidated && data.app_key && data.mac_address) {
         const isValid = await validateDevice(data.app_key, data.mac_address);
         
@@ -396,7 +445,7 @@ wss.on('connection', (ws, req) => {
         }
       }
       
-      // Jika belum tervalidasi dan bukan pesan pertama, disconnect (kecuali debug mode)
+      // PRIORITAS 3: Cek validasi untuk pesan non-identify
       if (!ws.isValidated && data.type !== 'identify') {
         if (ENABLE_DEVICE_VALIDATION) {
           console.log(`[${getTimeStamp()}] 🚫 Pesan diterima sebelum validasi device, disconnect: ${clientIp}`);
@@ -411,27 +460,6 @@ wss.on('connection', (ws, req) => {
             mac_address: data.mac_address || 'DEBUG_MODE'
           };
         }
-      }
-      
-      // Identifikasi tipe client
-      if (data.type === 'identify') {
-        ws.clientType = data.clientType; // 'sender' atau 'viewer'
-        console.log(`[${getTimeStamp()}] Client identified as: ${data.clientType}`);
-        
-        // Jika viewer, kirim semua data kapal dan device locations yang ada
-        if (data.clientType === 'viewer') {
-          const allShips = Array.from(shipsData.values());
-          const allDeviceLocations = Array.from(deviceLocations.values());
-          ws.send(JSON.stringify({
-            type: 'initial_data',
-            ships: allShips,
-            devices: allDeviceLocations,
-            count: allShips.length,
-            deviceCount: allDeviceLocations.length
-          }));
-          console.log(`[${getTimeStamp()}] Sent ${allShips.length} ships and ${allDeviceLocations.length} devices to viewer`);
-        }
-        return;
       }
       
       // Handle data dari sender (AIS data dan device location)

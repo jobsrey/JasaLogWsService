@@ -14,7 +14,7 @@ const R400NG_CONFIG = {
 };
 
 // Konfigurasi WebSocket
-const WEBSOCKET_SERVER = 'ws://23.31.23.35:8613';
+const WEBSOCKET_SERVER = 'ws://ekgssko4os4c8kkg4ckggscc.194.233.93.64.sslip.io:8081';
 const DEBOUNCE_DELAY = 100; // 100ms delay untuk menghindari pengiriman terlalu sering
 const APP_KEY = 'mb764kZuB6zi7ydihoUHAxG4oONs73HX6IkKCiDNaobaWTSWIf2kbCZQQJIGl7'; // ini untuk identifikasi device online
 
@@ -112,6 +112,15 @@ function connectWebSocket() {
   wsClient.on('open', () => {
     wsConnected = true;
     console.log(`[${getTimeStamp()}] ✓ WebSocket connected!`);
+    
+    // Kirim identify message sebagai sender
+    wsClient.send(JSON.stringify({
+      type: 'identify',
+      clientType: 'sender',
+      app_key: APP_KEY,
+      mac_address: deviceMacAddress
+    }));
+    console.log(`[${getTimeStamp()}] ✓ Sent identify message as sender`);
   });
   
   wsClient.on('close', () => {
