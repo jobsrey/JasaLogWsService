@@ -1,6 +1,7 @@
 import { WebSocketServer } from 'ws';
 import WebSocket from 'ws';
-import { MongoClient } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
+
 
 // Konfigurasi WebSocket Server
 const WS_PORT = process.env.PORT_WSS || 8080;
@@ -65,7 +66,7 @@ async function validateSensor(appKey, userKey) {
 
   try {
     const sensor = await sensorsCollection.findOne({
-      id: appKey,
+      id: new ObjectId(appKey),
       userId: userKey
     });
 
