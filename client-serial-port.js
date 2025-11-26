@@ -266,6 +266,14 @@ function connectToR400NG() {
       // Format output REALTIME dengan timestamp presisi tinggi
       console.log(`[${getTimeStamp()}] 📡 Pesan #${messageCount} | Delay: ${delay} | WS: ${sent ? '✓' : '✗'}`);
       console.log(`  Type: ${msgDesc}`);
+      
+      // Tampilkan informasi negara jika ada
+      if (decodedData && decodedData.country) {
+        console.log(`  Country: ${decodedData.country} (${decodedData.countryCode}) | MMSI: ${decodedData.mmsi}`);
+      } else if (decodedData && decodedData.mmsi) {
+        console.log(`  MMSI: ${decodedData.mmsi} | Country: Unknown`);
+      }
+      
       console.log(`  Data: ${msg}`);
       console.log(`  Decoded:`, JSON.stringify(decodedData, null, 2));
       console.log('─'.repeat(70));

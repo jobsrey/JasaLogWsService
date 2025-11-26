@@ -259,6 +259,9 @@ function extractShipData(decodedData) {
     mmsi: decodedData.mmsi,
     timestamp: new Date().toISOString(),
     messageType: decodedData.type || decodedData.aisType,
+    // Add country information
+    country: decodedData.country || null,
+    countryCode: decodedData.countryCode || null,
   };
 
   // Data posisi (Message Type 1, 2, 3, 18, 19)
@@ -477,6 +480,11 @@ wss.on('connection', (ws, req) => {
                   });
                   
                   console.log(`[${getTimeStamp()}] 📡 AIS Data: MMSI ${shipData.mmsi} | Broadcasted to ${clientCount} clients`);
+                  
+                  // Log country information if available
+                  if (shipData.country) {
+                    console.log(`  Country: ${shipData.country} (${shipData.countryCode})`);
+                  }
                   
                   // Log jika ada posisi
                   if (shipData.lat && shipData.lon) {
