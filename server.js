@@ -66,7 +66,7 @@ async function validateSensor(appKey, userKey) {
 
   try {
     const sensor = await sensorsCollection.findOne({
-      id: new ObjectId(appKey),
+      _id: new ObjectId(appKey),
       userId: userKey
     });
 
