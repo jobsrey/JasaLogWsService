@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AIS Ship Tracker - Real-time Map</title>
+  
+  <!-- Leaflet CSS (Local) -->
+  <link rel="stylesheet" href="assets/css/leaflet.css" />
+  
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      overflow: hidden;
+    }
+
+    #header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 15px 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    #header h1 {
+      font-size: 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #stats {
+      display: flex;
+      gap: 20px;
+      font-size: 14px;
+    }
+
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: rgba(255,255,255,0.1);
+      padding: 8px 15px;
+      border-radius: 8px;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      opacity: 0.8;
+      text-transform: uppercase;
+    }
+
+    .stat-value {
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    #connection-status {
+      padding: 5px 15px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .status-connected {
+      background: #10b981;
+    }
+
+    .status-disconnected {
+      background: #ef4444;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: white;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    #container {
+      display: flex;
+      height: calc(100vh - 70px);
+    }
+
+    #map {
+      flex: 1;
+      height: 100%;
+    }
+
+    #sidebar {
+      width: 350px;
+      background: #16213e;
+      overflow-y: auto;
+      box-shadow: -2px 0 10px rgba(0,0,0,0.3);
+    }
+
+    #sidebar::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    #sidebar::-webkit-scrollbar-track {
+      background: #0f1419;
+    }
+
+    #sidebar::-webkit-scrollbar-thumb {
+      background: #667eea;
+      border-radius: 4px;
+    }
+
+    .ship-card {
+      background: #1a1a2e;
+      margin: 10px;
+      padding: 15px;
+      border-radius: 10px;
+      border-left: 4px solid #667eea;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .ship-card:hover {
+      transform: translateX(-5px);
+      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+    }
+
+    .ship-card.selected {
+      border-left-color: #10b981;
+      background: #242438;
+    }
+
+    .ship-card.ship-warning {
+      border-left-color: #f59e0b;
+      background: rgba(245, 158, 11, 0.1);
+    }
+
+    .warning-badge {
+      background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
+      color: white;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: bold;
+      margin-bottom: 10px;
+      text-align: center;
+      animation: pulse-warning 2s infinite;
+    }
+
+    @keyframes pulse-warning {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    .ship-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .ship-name {
+      font-size: 16px;
+      font-weight: bold;
+      color: #667eea;
+    }
+
+    .ship-mmsi {
+      font-size: 12px;
+      color: #888;
+    }
+
+    .ship-info {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .info-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .info-label {
+      color: #888;
+      font-size: 10px;
+      text-transform: uppercase;
+    }
+
+    .info-value {
+      color: #eee;
+      font-weight: 500;
+      margin-top: 2px;
+    }
+
+    .ship-status {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 10px;
+      font-weight: bold;
+      background: #667eea;
+      color: white;
+    }
+
+    .last-update {
+      font-size: 10px;
+      color: #666;
+      margin-top: 8px;
+      text-align: right;
+    }
+
+    .no-ships {
+      text-align: center;
+      padding: 40px 20px;
+      color: #666;
+    }
+
+    /* Custom Leaflet Popup */
+    .leaflet-popup-content-wrapper {
+      background: #1a1a2e;
+      color: #eee;
+      border-radius: 10px;
+      box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+    }
+
+    .leaflet-popup-content {
+      margin: 15px;
+      font-size: 13px;
+    }
+
+    .popup-title {
+      font-size: 16px;
+      font-weight: bold;
+      color: #667eea;
+      margin-bottom: 10px;
+      border-bottom: 2px solid #667eea;
+      padding-bottom: 5px;
+    }
+
+    .popup-info {
+      display: grid;
+      gap: 5px;
+    }
+
+    .popup-row {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .popup-label {
+      color: #888;
+      font-weight: 500;
+    }
+
+    .popup-value {
+      color: #eee;
+      font-weight: bold;
+    }
+
+    /* Ship icon rotation */
+    .ship-icon {
+      transition: transform 0.5s ease;
+    }
+
+    /* Custom Leaflet Tooltip */
+    .leaflet-tooltip {
+      background: rgba(26, 26, 46, 0.95);
+      border: 2px solid #667eea;
+      border-radius: 8px;
+      color: #eee;
+      font-size: 12px;
+      padding: 8px 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      font-weight: 500;
+    }
+
+    .leaflet-tooltip-top:before {
+      border-top-color: #667eea;
+    }
+
+    .leaflet-tooltip-bottom:before {
+      border-bottom-color: #667eea;
+    }
+
+    .leaflet-tooltip-left:before {
+      border-left-color: #667eea;
+    }
+
+    .leaflet-tooltip-right:before {
+      border-right-color: #667eea;
+    }
+
+    /* Popup close button */
+    .leaflet-popup-close-button {
+      color: #667eea !important;
+      font-size: 20px !important;
+      font-weight: bold !important;
+    }
+
+    .leaflet-popup-close-button:hover {
+      color: #764ba2 !important;
+    }
+
+    /* Popup tip */
+    .leaflet-popup-tip {
+      background: #1a1a2e;
+    }
+
+    /* Marker animation on hover */
+    .ship-icon:hover {
+      transform: scale(1.1);
+      cursor: pointer;
+    }
+
+    /* Popup row spacing */
+    .popup-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 3px 0;
+    }
+
+    .popup-label {
+      color: #888;
+      font-weight: 500;
+      min-width: 100px;
+    }
+
+    .popup-value {
+      color: #eee;
+      font-weight: bold;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <h1>
+      <span>🚢</span>
+      <span>AIS Ship Tracker</span>
+    </h1>
+    <div id="stats">
+      <div class="stat-item">
+        <span class="stat-label">Total Ships</span>
+        <span class="stat-value" id="total-ships">0</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Active</span>
+        <span class="stat-value" id="active-ships">0</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Updates</span>
+        <span class="stat-value" id="total-updates">0</span>
+      </div>
+    </div>
+    <div id="connection-status" class="status-disconnected">
+      <span class="status-dot"></span>
+      <span>Disconnected</span>
+    </div>
+  </div>
+
+  <div id="container">
+    <div id="map"></div>
+    <div id="sidebar">
+      <div class="no-ships">
+        <p>⏳ Waiting for ship data...</p>
+        <p style="font-size: 12px; margin-top: 10px;">Make sure WebSocket server is running</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- jQuery (Local) -->
+  <script src="assets/js/jquery-3.7.1.min.js"></script>
+  
+  <!-- Leaflet JS (Local) -->
+  <script src="assets/js/leaflet.js"></script>
+  
+  <script>
+    // Configure Leaflet to use local images
+    L.Icon.Default.imagePath = 'assets/images/';
+    
+    // WebSocket Configuration
+    const WS_URL = 'ws://ekgssko4os4c8kkg4ckggscc.194.233.93.64.sslip.io:8081';
+    
+    // State
+    let ws = null;
+    let ships = new Map();
+    let devices = new Map();
+    let markers = new Map();
+    let deviceMarkers = new Map();
+    let selectedShip = null;
+    let totalUpdates = 0;
+    
+    // Initialize Map
+    const map = L.map('map').setView([-6.2088, 106.8456], 10); // Default: Jakarta
+    
+    // Add OpenStreetMap tiles
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 18
+    }).addTo(map);
+
+    // Get ship color based on navigation status
+    function getShipColor(navStatus, speed) {
+      if (navStatus === 1 || navStatus === 5) return '#10b981'; // At anchor/Moored - Green
+      if (navStatus === 6) return '#ef4444'; // Aground - Red
+      if (navStatus === 7) return '#f59e0b'; // Fishing - Orange
+      if (speed && speed > 0) return '#3b82f6'; // Moving - Blue
+      return '#6b7280'; // Default - Gray
+    }
+
+    // Custom ship icon with color and rotation
+    const createShipIcon = (ship) => {
+      // Convert heading/course from navigation standard (0°=North) to CSS standard (0°=East)
+      // CSS rotation: 0°=right, 90°=down, 180°=left, 270°=up
+      // Navigation: 0°=up, 90°=right, 180°=down, 270°=left
+      // Arrow points up, so we need to convert: heading - 90
+      const heading = (ship.heading || ship.course || 0);
+      const color = getShipColor(ship.navStatus, ship.speed);
+      const shipName = ship.name || ship.mmsi;
+      
+      // SVG ship icon - Triangular arrow shape (filled)
+      const shipSvg = `
+        <svg width="48" height="48" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <filter id="shipShadow" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="3" stdDeviation="3" flood-opacity="0.4"/>
+            </filter>
+          </defs>
+          
+          <!-- Triangular arrow shape with V-notch pointing up - filled -->
+          <path d="M 50 10 L 20 85 L 50 65 L 80 85 Z" 
+                fill="${color}" 
+                stroke="rgba(255,255,255,0.3)" 
+                stroke-width="1" 
+                stroke-linejoin="round"
+                filter="url(#shipShadow)"/>
+        </svg>
+      `;
+      
+      return L.divIcon({
+        html: `
+          <div style="text-align: center;">
+            <div style="
+              transform: rotate(${heading}deg);
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+              transition: all 0.3s ease;
+            ">${shipSvg}</div>
+            <div style="
+              background: ${color};
+              color: white;
+              padding: 4px 10px;
+              border-radius: 14px;
+              font-size: 10px;
+              font-weight: bold;
+              white-space: normal;
+              word-wrap: break-word;
+              margin-top: 4px;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+              border: 1px solid rgba(255,255,255,0.4);
+              min-width: 80px;
+              max-width: 150px;
+            }">${shipName}</div>
+          </div>
+        `,
+        className: 'ship-icon',
+        iconSize: [160, 100],
+        iconAnchor: [80, 50],
+        popupAnchor: [0, -50]
+      });
+    };
+
+    // Custom radio tower icon for devices
+    const createRadioTowerIcon = (device) => {
+      const deviceName = device.name || 'AIS Device';
+      
+      // SVG radio tower icon
+      const towerSvg = `
+        <svg width="48" height="48" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <filter id="towerShadow" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="3" stdDeviation="3" flood-opacity="0.4"/>
+            </filter>
+          </defs>
+          
+          <!-- Radio Tower Structure -->
+          <!-- Base -->
+          <rect x="45" y="80" width="10" height="15" fill="#666" stroke="#333" stroke-width="1"/>
+          
+          <!-- Main Tower -->
+          <rect x="47" y="25" width="6" height="55" fill="#888" stroke="#333" stroke-width="1"/>
+          
+          <!-- Cross Beams -->
+          <line x1="35" y1="70" x2="65" y2="70" stroke="#666" stroke-width="2"/>
+          <line x1="40" y1="55" x2="60" y2="55" stroke="#666" stroke-width="2"/>
+          <line x1="42" y1="40" x2="58" y2="40" stroke="#666" stroke-width="2"/>
+          
+          <!-- Antenna -->
+          <rect x="49" y="15" width="2" height="10" fill="#ff6b35" stroke="#d63031" stroke-width="1"/>
+          
+          <!-- Signal Waves -->
+          <circle cx="50" cy="20" r="8" fill="none" stroke="#ff6b35" stroke-width="1.5" opacity="0.7"/>
+          <circle cx="50" cy="20" r="12" fill="none" stroke="#ff6b35" stroke-width="1" opacity="0.5"/>
+          <circle cx="50" cy="20" r="16" fill="none" stroke="#ff6b35" stroke-width="0.5" opacity="0.3"/>
+          
+          <!-- Support Lines -->
+          <line x1="35" y1="70" x2="47" y2="40" stroke="#666" stroke-width="1"/>
+          <line x1="65" y1="70" x2="53" y2="40" stroke="#666" stroke-width="1"/>
+          <line x1="40" y1="55" x2="47" y2="30" stroke="#666" stroke-width="1"/>
+          <line x1="60" y1="55" x2="53" y2="30" stroke="#666" stroke-width="1"/>
+        </svg>
+      `;
+      
+      return L.divIcon({
+        html: `
+          <div style="text-align: center;">
+            <div style="
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+              transition: all 0.3s ease;
+            ">${towerSvg}</div>
+            <div style="
+              background: linear-gradient(135deg, #ff6b35 0%, #d63031 100%);
+              color: white;
+              padding: 4px 10px;
+              border-radius: 14px;
+              font-size: 10px;
+              font-weight: bold;
+              white-space: normal;
+              word-wrap: break-word;
+              margin-top: 4px;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+              border: 1px solid rgba(255,255,255,0.4);
+              min-width: 80px;
+              max-width: 150px;
+            }">${deviceName}</div>
+          </div>
+        `,
+        className: 'device-icon',
+        iconSize: [160, 100],
+        iconAnchor: [80, 50],
+        popupAnchor: [0, -50]
+      });
+    };
+
+    // Get ship type description
+    function getShipTypeText(type) {
+      const types = {
+        0: 'Not available',
+        20: 'Wing in ground',
+        30: 'Fishing',
+        31: 'Towing',
+        32: 'Towing (large)',
+        33: 'Dredging',
+        34: 'Diving ops',
+        35: 'Military ops',
+        36: 'Sailing',
+        37: 'Pleasure Craft',
+        40: 'High speed craft',
+        50: 'Pilot Vessel',
+        51: 'Search and Rescue',
+        52: 'Tug',
+        53: 'Port Tender',
+        54: 'Anti-pollution',
+        55: 'Law Enforcement',
+        60: 'Passenger',
+        70: 'Cargo',
+        80: 'Tanker',
+        90: 'Other'
+      };
+      return types[type] || `Type ${type}`;
+    }
+
+    // Format functions
+    function formatSpeed(speed) {
+      return speed ? `${speed.toFixed(1)} knots` : 'N/A';
+    }
+
+    function formatCourse(course) {
+      return course !== undefined ? `${course.toFixed(0)}°` : 'N/A';
+    }
+
+    function formatCoordinates(lat, lon) {
+      if (lat === undefined || lon === undefined) return 'N/A';
+      return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+    }
+
+    function formatTimestamp(timestamp) {
+      const date = new Date(timestamp);
+      return date.toLocaleTimeString('id-ID');
+    }
+
+    function getNavStatusText(status) {
+      const statuses = {
+        0: 'Under way using engine',
+        1: 'At anchor',
+        2: 'Not under command',
+        3: 'Restricted manoeuvrability',
+        4: 'Constrained by draught',
+        5: 'Moored',
+        6: 'Aground',
+        7: 'Engaged in fishing',
+        8: 'Under way sailing',
+        15: 'Not defined'
+      };
+      return statuses[status] || 'Unknown';
+    }
+
+    // Update ship marker on map
+    function updateShipMarker(ship) {
+      if (!ship.lat || !ship.lon) return;
+
+      const position = [ship.lat, ship.lon];
+      
+      if (markers.has(ship.mmsi)) {
+        // Update existing marker
+        const marker = markers.get(ship.mmsi);
+        marker.setLatLng(position);
+        marker.setIcon(createShipIcon(ship));
+        
+        // Update popup content
+        const popupContent = createPopupContent(ship);
+        marker.setPopupContent(popupContent);
+        
+        // Update tooltip
+        const tooltipContent = createTooltipContent(ship);
+        marker.setTooltipContent(tooltipContent);
+      } else {
+        // Create new marker
+        const marker = L.marker(position, {
+          icon: createShipIcon(ship)
+        }).addTo(map);
+        
+        // Popup content
+        const popupContent = createPopupContent(ship);
+        marker.bindPopup(popupContent, {
+          maxWidth: 300,
+          className: 'ship-popup'
+        });
+        
+        // Tooltip (hover)
+        const tooltipContent = createTooltipContent(ship);
+        marker.bindTooltip(tooltipContent, {
+          permanent: false,
+          direction: 'top',
+          offset: [0, -20]
+        });
+        
+        marker.on('click', () => selectShip(ship.mmsi));
+        
+        markers.set(ship.mmsi, marker);
+      }
+    }
+
+    // Update device marker on map
+    function updateDeviceMarker(device) {
+      if (!device.latitude || !device.longitude) return;
+
+      const position = [device.latitude, device.longitude];
+      const deviceKey = `${device.app_key}_${device.mac_address}`;
+      
+      if (deviceMarkers.has(deviceKey)) {
+        // Update existing marker
+        const marker = deviceMarkers.get(deviceKey);
+        marker.setLatLng(position);
+        marker.setIcon(createRadioTowerIcon(device));
+        
+        // Update popup content
+        const popupContent = createDevicePopupContent(device);
+        marker.setPopupContent(popupContent);
+        
+        // Update tooltip
+        const tooltipContent = createDeviceTooltipContent(device);
+        marker.setTooltipContent(tooltipContent);
+      } else {
+        // Create new marker
+        const marker = L.marker(position, {
+          icon: createRadioTowerIcon(device)
+        }).addTo(map);
+        
+        // Popup content
+        const popupContent = createDevicePopupContent(device);
+        marker.bindPopup(popupContent, {
+          maxWidth: 300,
+          className: 'device-popup'
+        });
+        
+        // Tooltip (hover)
+        const tooltipContent = createDeviceTooltipContent(device);
+        marker.bindTooltip(tooltipContent, {
+          permanent: false,
+          direction: 'top',
+          offset: [0, -20]
+        });
+        
+        deviceMarkers.set(deviceKey, marker);
+      }
+    }
+
+    // Create detailed popup content for devices
+    function createDevicePopupContent(device) {
+      const lastUpdate = new Date(device.lastUpdate);
+      const timeAgo = getTimeAgo(lastUpdate);
+      
+      return `
+        <div class="popup-title">
+          📡 ${device.name || 'AIS Device'}
+        </div>
+        <div class="popup-info">
+          <div class="popup-row">
+            <span class="popup-label">🔑 App Key:</span>
+            <span class="popup-value">${device.app_key}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">🖥️ MAC Address:</span>
+            <span class="popup-value">${device.mac_address}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">📍 Position:</span>
+            <span class="popup-value">${formatCoordinates(device.latitude, device.longitude)}</span>
+          </div>
+          ${device.description ? `
+          <div class="popup-row">
+            <span class="popup-label">📝 Description:</span>
+            <span class="popup-value">${device.description}</span>
+          </div>` : ''}
+          ${device.source ? `
+          <div class="popup-row">
+            <span class="popup-label">📊 Source:</span>
+            <span class="popup-value">${device.source}</span>
+          </div>` : ''}
+          ${device.sourcePort ? `
+          <div class="popup-row">
+            <span class="popup-label">🔌 Port:</span>
+            <span class="popup-value">${device.sourcePort}</span>
+          </div>` : ''}
+          <div class="popup-row" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #ff6b35;">
+            <span class="popup-label">🕐 Last Update:</span>
+            <span class="popup-value" style="font-size: 11px;">${timeAgo}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    // Create tooltip content for devices (hover)
+    function createDeviceTooltipContent(device) {
+      return `
+        <strong>📡 ${device.name || 'AIS Device'}</strong><br>
+        Type: Radio Tower<br>
+        Status: Active
+      `;
+    }
+
+    // Create detailed popup content
+    function createPopupContent(ship) {
+      const lastUpdate = new Date(ship.lastUpdate);
+      const timeAgo = getTimeAgo(lastUpdate);
+      
+      
+      return `
+        <div class="popup-title">
+          🚢 ${ship.name || 'Unknown Vessel'}
+        </div>
+        <div class="popup-info">
+          <div class="popup-row">
+            <span class="popup-label">📡 MMSI:</span>
+            <span class="popup-value">${ship.mmsi}</span>
+          </div>
+          ${ship.country ? `
+          <div class="popup-row">
+            <span class="popup-label">🏴 Country:</span>
+            <span class="popup-value">${ship.country} (${ship.countryCode || 'N/A'})</span>
+          </div>` : ''}
+          ${ship.callsign ? `
+          <div class="popup-row">
+            <span class="popup-label">📻 Callsign:</span>
+            <span class="popup-value">${ship.callsign}</span>
+          </div>` : ''}
+          ${ship.shipType !== undefined ? `
+          <div class="popup-row">
+            <span class="popup-label">🚢 Type:</span>
+            <span class="popup-value">${getShipTypeText(ship.shipType)}</span>
+          </div>` : ''}
+          <div class="popup-row">
+            <span class="popup-label">📍 Position:</span>
+            <span class="popup-value">${formatCoordinates(ship.lat, ship.lon)}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">⚡ Speed:</span>
+            <span class="popup-value" style="color: ${ship.speed > 10 ? '#10b981' : '#6b7280'}">${formatSpeed(ship.speed)}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">🧭 Course:</span>
+            <span class="popup-value">${formatCourse(ship.course)}</span>
+          </div>
+          ${ship.heading !== undefined ? `
+          <div class="popup-row">
+            <span class="popup-label">🎯 Heading:</span>
+            <span class="popup-value">${ship.heading}°</span>
+          </div>` : ''}
+          ${ship.navStatus !== undefined ? `
+          <div class="popup-row">
+            <span class="popup-label">⚓ Status:</span>
+            <span class="popup-value" style="color: ${getShipColor(ship.navStatus, ship.speed)}">
+              ${getNavStatusText(ship.navStatus)}
+            </span>
+          </div>` : ''}
+          ${ship.destination ? `
+          <div class="popup-row">
+            <span class="popup-label">🎯 Destination:</span>
+            <span class="popup-value">${ship.destination}</span>
+          </div>` : ''}
+          ${ship.eta ? `
+          <div class="popup-row">
+            <span class="popup-label">🕐 ETA:</span>
+            <span class="popup-value">${ship.eta}</span>
+          </div>` : ''}
+          ${ship.dimensions ? `
+          <div class="popup-row">
+            <span class="popup-label">📏 Dimensions:</span>
+            <span class="popup-value">${ship.dimensions.length}m × ${ship.dimensions.width}m</span>
+          </div>` : ''}
+          <div class="popup-row" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #667eea;">
+            <span class="popup-label">🕐 Last Update:</span>
+            <span class="popup-value" style="font-size: 11px;">${timeAgo}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    // Create tooltip content (hover)
+    function createTooltipContent(ship) {
+      return `
+        <strong>${ship.name || 'Unknown'}</strong><br>
+        MMSI: ${ship.mmsi}<br>
+        ${ship.country ? `Country: ${ship.country}<br>` : ''}
+        Speed: ${formatSpeed(ship.speed)}<br>
+        ${ship.navStatus !== undefined ? getNavStatusText(ship.navStatus) : ''}
+      `;
+    }
+
+    // Get time ago from timestamp
+    function getTimeAgo(date) {
+      const now = new Date();
+      const seconds = Math.floor((now - date) / 1000);
+      
+      if (seconds < 60) return `${seconds} seconds ago`;
+      if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
+      if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
+      return date.toLocaleString('id-ID');
+    }
+
+    // Update sidebar
+    function updateSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      
+      if (ships.size === 0) {
+        sidebar.innerHTML = `
+          <div class="no-ships">
+            <p>⏳ Waiting for ship data...</p>
+            <p style="font-size: 12px; margin-top: 10px;">Make sure WebSocket server is running</p>
+          </div>
+        `;
+        return;
+      }
+
+      const shipsArray = Array.from(ships.values());
+      shipsArray.sort((a, b) => {
+        const aTime = new Date(a.lastUpdate).getTime();
+        const bTime = new Date(b.lastUpdate).getTime();
+        return bTime - aTime;
+      });
+      
+      // Helper function to check if ship is inactive
+      const getInactiveStatus = (lastUpdate) => {
+        const now = Date.now();
+        const timeSinceUpdate = now - new Date(lastUpdate).getTime();
+        const minutes = Math.floor(timeSinceUpdate / 60000);
+        
+        if (minutes > 7) {
+          return { warning: true, minutes };
+        }
+        return { warning: false, minutes };
+      };
+
+      sidebar.innerHTML = shipsArray.map(ship => {
+        const inactiveStatus = getInactiveStatus(ship.lastUpdate);
+        const warningClass = inactiveStatus.warning ? 'ship-warning' : '';
+        
+        return `
+        <div class="ship-card ${selectedShip === ship.mmsi ? 'selected' : ''} ${warningClass}" onclick="selectShip('${ship.mmsi}')">
+          ${inactiveStatus.warning ? `
+          <div class="warning-badge">
+            ⚠️ No signal (${inactiveStatus.minutes} min) - Will be removed soon
+          </div>` : ''}
+          <div class="ship-header">
+            <div>
+              <div class="ship-name">${ship.name || 'Unknown Vessel'}</div>
+              <div class="ship-mmsi">MMSI: ${ship.mmsi}</div>
+            </div>
+            ${ship.navStatus !== undefined ? `<span class="ship-status">${getNavStatusText(ship.navStatus)}</span>` : ''}
+          </div>
+          <div class="ship-info">
+            ${ship.country ? `
+            <div class="info-item">
+              <span class="info-label">Country</span>
+              <span class="info-value">${ship.country}</span>
+            </div>` : ''}
+            ${ship.lat && ship.lon ? `
+            <div class="info-item">
+              <span class="info-label">Position</span>
+              <span class="info-value">${ship.lat.toFixed(4)}, ${ship.lon.toFixed(4)}</span>
+            </div>` : ''}
+            ${ship.speed !== undefined ? `
+            <div class="info-item">
+              <span class="info-label">Speed</span>
+              <span class="info-value">${formatSpeed(ship.speed)}</span>
+            </div>` : ''}
+            ${ship.course !== undefined ? `
+            <div class="info-item">
+              <span class="info-label">Course</span>
+              <span class="info-value">${formatCourse(ship.course)}</span>
+            </div>` : ''}
+            ${ship.callsign ? `
+            <div class="info-item">
+              <span class="info-label">Callsign</span>
+              <span class="info-value">${ship.callsign}</span>
+            </div>` : ''}
+            ${ship.destination ? `
+            <div class="info-item" style="grid-column: 1 / -1;">
+              <span class="info-label">Destination</span>
+              <span class="info-value">${ship.destination}</span>
+            </div>` : ''}
+          </div>
+          <div class="last-update">Last update: ${formatTimestamp(ship.lastUpdate)}</div>
+        </div>
+        `;
+      }).join('');
+    }
+
+    // Select ship
+    function selectShip(mmsi) {
+      selectedShip = mmsi;
+      const ship = ships.get(mmsi);
+      
+      if (ship && ship.lat && ship.lon) {
+        map.setView([ship.lat, ship.lon], 13);
+        const marker = markers.get(mmsi);
+        if (marker) {
+          marker.openPopup();
+        }
+      }
+      
+      updateSidebar();
+    }
+
+    // Update statistics
+    function updateStats() {
+      document.getElementById('total-ships').textContent = ships.size;
+      
+      // Count ships with recent position updates (last 5 minutes)
+      const now = Date.now();
+      const activeShips = Array.from(ships.values()).filter(ship => {
+        const lastUpdate = new Date(ship.lastUpdate).getTime();
+        return (now - lastUpdate) < 5 * 60 * 1000 && ship.lat && ship.lon;
+      }).length;
+      
+      document.getElementById('active-ships').textContent = activeShips;
+      document.getElementById('total-updates').textContent = totalUpdates;
+    }
+
+    // WebSocket connection
+    function connectWebSocket() {
+      console.log('Connecting to WebSocket:', WS_URL);
+      ws = new WebSocket(WS_URL);
+
+      ws.onopen = () => {
+        console.log('WebSocket connected');
+        document.getElementById('connection-status').className = 'status-connected';
+        document.getElementById('connection-status').innerHTML = '<span class="status-dot"></span><span>Connected</span>';
+        
+        // Identify as viewer
+        ws.send(JSON.stringify({
+          type: 'identify',
+          clientType: 'viewer'
+        }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'initial_data') {
+            console.log('Received initial data:', data.count, 'ships', data.deviceCount || 0, 'devices');
+            
+            // Clear existing markers and ships
+            markers.forEach(marker => {
+              map.removeLayer(marker);
+            });
+            deviceMarkers.forEach(marker => {
+              map.removeLayer(marker);
+            });
+            markers.clear();
+            deviceMarkers.clear();
+            ships.clear();
+            devices.clear();
+            selectedShip = null;
+            
+            // Process ships
+            data.ships.forEach(ship => {
+              ships.set(ship.mmsi.toString(), ship);
+              updateShipMarker(ship);
+            });
+            
+            // Process devices
+            if (data.devices && Array.isArray(data.devices)) {
+              data.devices.forEach(device => {
+                const deviceKey = `${device.app_key}_${device.mac_address}`;
+                devices.set(deviceKey, device);
+                updateDeviceMarker(device);
+              });
+            }
+            
+            updateSidebar();
+            updateStats();
+            
+            // Auto-zoom to show all ships and devices
+            const bounds = [];
+            ships.forEach(ship => {
+              if (ship.lat && ship.lon) {
+                bounds.push([ship.lat, ship.lon]);
+              }
+            });
+            devices.forEach(device => {
+              if (device.latitude && device.longitude) {
+                bounds.push([device.latitude, device.longitude]);
+              }
+            });
+            if (bounds.length > 0) {
+              map.fitBounds(bounds, { padding: [50, 50] });
+            }
+          } else if (data.type === 'ship_update') {
+            const ship = data.ship;
+            ships.set(ship.mmsi.toString(), ship);
+            updateShipMarker(ship);
+            updateSidebar();
+            totalUpdates++;
+            updateStats();
+            
+            console.log('Ship update:', ship.mmsi, ship.name || 'Unknown');
+          } else if (data.type === 'device_location_update') {
+            const device = data.device;
+            const deviceKey = `${device.app_key}_${device.mac_address}`;
+            devices.set(deviceKey, device);
+            updateDeviceMarker(device);
+            totalUpdates++;
+            updateStats();
+            
+            console.log('Device location update:', device.name || 'AIS Device', 'at', device.latitude, device.longitude);
+          } else if (data.type === 'ship_removed') {
+            // Handle kapal yang dihapus karena tidak aktif
+            const mmsi = data.mmsi.toString();
+            const ship = ships.get(mmsi);
+            
+            if (ship) {
+              console.log('Ship removed (inactive):', mmsi, ship.name || 'Unknown', '- Last seen:', new Date(data.lastUpdate).toLocaleTimeString('id-ID'));
+              
+              // Hapus marker dari map
+              const marker = markers.get(mmsi);
+              if (marker) {
+                map.removeLayer(marker);
+                markers.delete(mmsi);
+              }
+              
+              // Hapus dari ships data
+              ships.delete(mmsi);
+              
+              // Clear selection jika kapal yang dipilih dihapus
+              if (selectedShip === mmsi) {
+                selectedShip = null;
+              }
+              
+              // Update UI
+              updateSidebar();
+              updateStats();
+            }
+          } else if (data.type === 'all_ships') {
+            console.log('Received all ships:', data.count);
+            
+            // Dapatkan list MMSI yang baru dari data
+            const newShipMmsis = new Set(data.ships.map(s => s.mmsi.toString()));
+            
+            // Hapus kapal yang tidak ada di data baru
+            const shipsToRemove = [];
+            ships.forEach((ship, mmsi) => {
+              if (!newShipMmsis.has(mmsi)) {
+                shipsToRemove.push(mmsi);
+              }
+            });
+            
+            // Hapus marker dan data kapal yang tidak ada lagi
+            shipsToRemove.forEach(mmsi => {
+              const marker = markers.get(mmsi);
+              if (marker) {
+                map.removeLayer(marker);
+                markers.delete(mmsi);
+              }
+              ships.delete(mmsi);
+              
+              // Clear selection jika kapal yang dipilih dihapus
+              if (selectedShip === mmsi) {
+                selectedShip = null;
+              }
+            });
+            
+            // Update kapal yang ada
+            data.ships.forEach(ship => {
+              ships.set(ship.mmsi.toString(), ship);
+              updateShipMarker(ship);
+            });
+            updateSidebar();
+            updateStats();
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket disconnected. Reconnecting in 5s...');
+        document.getElementById('connection-status').className = 'status-disconnected';
+        document.getElementById('connection-status').innerHTML = '<span class="status-dot"></span><span>Disconnected</span>';
+        setTimeout(connectWebSocket, 5000);
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+    }
+
+    // Initialize
+    connectWebSocket();
+    
+    // Make selectShip available globally
+    window.selectShip = selectShip;
+  </script>
+</body>
+</html>
