@@ -328,8 +328,8 @@ wss.on('connection', (ws, req) => {
         if (data.clientType === 'viewer-by-user' && data.user_key) {
           ws.isValidated = true;
           ws.userKey = data.user_key;
-          // Filter ships berdasarkan user_key
-          const userShips = Array.from(shipsData.values()).filter(ship => ship.sensorId && ship.sensorId.startsWith(data.user_key));
+          // Filter ships berdasarkan userId (bukan sensorId)
+          const userShips = Array.from(shipsData.values()).filter(ship => ship.userId === data.user_key);
           ws.send(JSON.stringify({
             type: 'initial_data',
             ships: userShips,
@@ -496,7 +496,7 @@ wss.on('connection', (ws, req) => {
         
         // Filter berdasarkan tipe viewer
         if (ws.clientType === 'viewer-by-user' && ws.userKey) {
-          allShips = allShips.filter(ship => ship.sensorId && ship.sensorId.startsWith(ws.userKey));
+          allShips = allShips.filter(ship => ship.userId === ws.userKey);
         } else if (ws.clientType === 'viewer-by-device' && ws.appKey) {
           allShips = allShips.filter(ship => ship.sensorId === ws.appKey);
         }
