@@ -224,8 +224,43 @@ function extractShipData(decodedData, sensorId = null) {
   return shipData;
 }
 
-// Fungsi untuk update data kapal (in-memory cache)
-async function updateShipData(shipData) {
+// Fungsi untuk upsert data kapal ke MongoDB
+async function upsertShipToMongoDB(shipData) {
+  if (!shipsCollection || !shipData || !shipData.mmsi) {
+    return null;
+  }
+
+  try {
+    const filter = { mmsi: shipData.mmsi };
+    const update = {
+      $set: {
+        ...shipData,
+        lastUpdate: new Date().toISOString()
+      }
+    };
+    
+    const options = {
+      upsert: true,
+      returnDocument: 'after'
+    };
+    
+    const result = await shipsCollection.findOneAndUpdate(filter, update, options);
+    
+    if (result.lastErrorObject?.upserted) {
+      console.log(`  📝 MongoDB: Inserted new ship MMSI ${shipData.mmsi}`);
+    } else {
+      console.log(`  🔄 MongoDB: Updated existing ship MMSI ${shipData.mmsi}`);
+    }
+    
+    return result.value;
+  } catch (error) {
+    console.error(`❌ MongoDB upsert error for MMSI ${shipData.mmsi}:`, error.message);
+    return null;
+  }
+}
+
+// Fungsi untuk update data kapal (in-memory dan MongoDB)
+async function updateShipData(shipData, sensorInfo = null) {
   if (!shipData || !shipData.mmsi) {
     return null;
   }
@@ -242,8 +277,17 @@ async function updateShipData(shipData) {
     lastUpdate: new Date().toISOString()
   };
   
+  // Tambahkan sensorId dan userId jika ada sensorInfo
+  if (sensorInfo) {
+    existingData.sensorId = sensorInfo.sensorId || sensorInfo.app_key;
+    existingData.userId = sensorInfo.userId || sensorInfo.user_key;
+  }
+  
   // Simpan ke memory cache
   shipsData.set(mmsi, existingData);
+  
+  // Simpan ke MongoDB (upsert)
+  const mongoResult = await upsertShipToMongoDB(existingData);
   
   return existingData;
 }
@@ -417,7 +461,7 @@ wss.on('connection', (ws, req) => {
             
             if (shipData) {
               try {
-                const updatedShip = await updateShipData(shipData);
+                const updatedShip = await updateShipData(shipData, ws.sensorInfo);
                 
                 if (updatedShip) {
                   // Broadcast ke viewer dengan filter
@@ -480,7 +524,7 @@ wss.on('connection', (ws, req) => {
           
           if (shipData) {
             try {
-              const updatedShip = await updateShipData(shipData);
+              const updatedShip = await updateShipData(shipData, ws.sensorInfo);
               
               if (updatedShip) {
                 // Broadcast ke viewer dengan filter

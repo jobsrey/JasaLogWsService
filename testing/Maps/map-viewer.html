@@ -628,6 +628,18 @@
       return statuses[status] || 'Unknown';
     }
 
+    // Get flag emoji from country code
+    function getFlagEmoji(countryCode) {
+      if (!countryCode || countryCode.length !== 2) return '🏴';
+      
+      const codePoints = countryCode
+        .toUpperCase()
+        .split('')
+        .map(char => 127397 + char.charCodeAt());
+      
+      return String.fromCodePoint(...codePoints);
+    }
+
     // Update ship marker on map
     function updateShipMarker(ship) {
       if (!ship.lat || !ship.lon) return;
@@ -790,8 +802,8 @@
           </div>
           ${ship.country ? `
           <div class="popup-row">
-            <span class="popup-label">🏴 Country:</span>
-            <span class="popup-value">${ship.country} (${ship.countryCode || 'N/A'})</span>
+            <span class="popup-label">🌍 Country:</span>
+            <span class="popup-value">${getFlagEmoji(ship.countryCode)} ${ship.country} (${ship.countryCode || 'N/A'})</span>
           </div>` : ''}
           ${ship.callsign ? `
           <div class="popup-row">
