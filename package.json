@@ -16,11 +16,12 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "net": "^1.0.2",
-    "serialport": "^12.0.0",
     "@serialport/parser-readline": "^12.0.0",
+    "decoder-ais-jasalog": "^1.0.0",
     "macaddress": "^0.5.3",
     "mongodb": "^7.0.0",
+    "net": "^1.0.2",
+    "serialport": "^12.0.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
