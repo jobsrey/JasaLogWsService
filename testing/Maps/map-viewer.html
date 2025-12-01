@@ -403,8 +403,10 @@
     let ws = null;
     let ships = new Map();
     let devices = new Map();
+    let sensors = new Map();
     let markers = new Map();
     let deviceMarkers = new Map();
+    let sensorMarkers = new Map();
     let selectedShip = null;
     let totalUpdates = 0;
     
@@ -484,6 +486,95 @@
           </div>
         `,
         className: 'ship-icon',
+        iconSize: [160, 100],
+        iconAnchor: [80, 50],
+        popupAnchor: [0, -50]
+      });
+    };
+
+    // Get sensor color based on sensorType
+    function getSensorColor(sensorType) {
+      const colors = {
+        'CCTV': '#3b82f6',      // Blue
+        'AIS': '#10b981',       // Green
+        'RADAR': '#f59e0b',     // Orange
+        'WEATHER': '#8b5cf6',   // Purple
+        'GPS': '#ec4899',       // Pink
+        'DEFAULT': '#6b7280'    // Gray
+      };
+      return colors[sensorType?.toUpperCase()] || colors['DEFAULT'];
+    }
+
+    // Custom radio tower icon for sensors
+    const createSensorIcon = (sensor) => {
+      const sensorName = sensor.name || 'Sensor';
+      const sensorColor = getSensorColor(sensor.sensorType);
+      
+      // SVG radio tower icon
+      const towerSvg = `
+        <svg width="48" height="48" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <filter id="sensorShadow-${sensor._id}" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="3" stdDeviation="3" flood-opacity="0.4"/>
+            </filter>
+          </defs>
+          
+          <!-- Radio Tower Structure -->
+          <!-- Base -->
+          <rect x="45" y="80" width="10" height="15" fill="#666" stroke="#333" stroke-width="1"/>
+          
+          <!-- Main Tower -->
+          <rect x="47" y="25" width="6" height="55" fill="#888" stroke="#333" stroke-width="1"/>
+          
+          <!-- Cross Beams -->
+          <line x1="35" y1="70" x2="65" y2="70" stroke="#666" stroke-width="2"/>
+          <line x1="40" y1="55" x2="60" y2="55" stroke="#666" stroke-width="2"/>
+          <line x1="42" y1="40" x2="58" y2="40" stroke="#666" stroke-width="2"/>
+          
+          <!-- Antenna -->
+          <rect x="49" y="15" width="2" height="10" fill="${sensorColor}" stroke="${sensorColor}" stroke-width="1"/>
+          
+          <!-- Signal Waves -->
+          <circle cx="50" cy="20" r="8" fill="none" stroke="${sensorColor}" stroke-width="1.5" opacity="0.7"/>
+          <circle cx="50" cy="20" r="12" fill="none" stroke="${sensorColor}" stroke-width="1" opacity="0.5"/>
+          <circle cx="50" cy="20" r="16" fill="none" stroke="${sensorColor}" stroke-width="0.5" opacity="0.3"/>
+          
+          <!-- Support Lines -->
+          <line x1="35" y1="70" x2="47" y2="40" stroke="#666" stroke-width="1"/>
+          <line x1="65" y1="70" x2="53" y2="40" stroke="#666" stroke-width="1"/>
+          <line x1="40" y1="55" x2="47" y2="30" stroke="#666" stroke-width="1"/>
+          <line x1="60" y1="55" x2="53" y2="30" stroke="#666" stroke-width="1"/>
+        </svg>
+      `;
+      
+      return L.divIcon({
+        html: `
+          <div style="text-align: center;">
+            <div style="
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+              transition: all 0.3s ease;
+            ">${towerSvg}</div>
+            <div style="
+              background: linear-gradient(135deg, ${sensorColor} 0%, ${sensorColor}dd 100%);
+              color: white;
+              padding: 4px 10px;
+              border-radius: 14px;
+              font-size: 10px;
+              font-weight: bold;
+              white-space: normal;
+              word-wrap: break-word;
+              margin-top: 4px;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+              border: 1px solid rgba(255,255,255,0.4);
+              min-width: 80px;
+              max-width: 150px;
+            ">${sensorName}</div>
+          </div>
+        `,
+        className: 'sensor-icon',
         iconSize: [160, 100],
         iconAnchor: [80, 50],
         popupAnchor: [0, -50]
@@ -728,6 +819,95 @@
         });
         
         deviceMarkers.set(deviceKey, marker);
+      }
+    }
+
+    // Create detailed popup content for sensors
+    function createSensorPopupContent(sensor) {
+      const lastUpdate = new Date(sensor.updatedAt || sensor.createdAt);
+      const timeAgo = getTimeAgo(lastUpdate);
+      const sensorColor = getSensorColor(sensor.sensorType);
+      
+      return `
+        <div class="popup-title">
+          📡 ${sensor.name || 'Sensor'}
+        </div>
+        <div class="popup-info">
+          <div class="popup-row">
+            <span class="popup-label">🔖 Type:</span>
+            <span class="popup-value" style="color: ${sensorColor}">${sensor.sensorType || 'N/A'}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">🔢 Serial Number:</span>
+            <span class="popup-value">${sensor.serialNumber || 'N/A'}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">📍 Position:</span>
+            <span class="popup-value">${formatCoordinates(sensor.latitude, sensor.longitude)}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">📊 Status:</span>
+            <span class="popup-value" style="color: ${sensor.activeStatus ? '#10b981' : '#ef4444'}">${sensor.activeStatus ? 'Active' : 'Inactive'}</span>
+          </div>
+          <div class="popup-row" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid ${sensorColor};">
+            <span class="popup-label">🕐 Last Update:</span>
+            <span class="popup-value" style="font-size: 11px;">${timeAgo}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    // Create tooltip content for sensors (hover)
+    function createSensorTooltipContent(sensor) {
+      return `
+        <strong>📡 ${sensor.name || 'Sensor'}</strong><br>
+        Type: ${sensor.sensorType || 'N/A'}<br>
+        Status: ${sensor.activeStatus ? 'Active' : 'Inactive'}
+      `;
+    }
+
+    // Update sensor marker on map
+    function updateSensorMarker(sensor) {
+      if (!sensor.latitude || !sensor.longitude) return;
+
+      const position = [sensor.latitude, sensor.longitude];
+      const sensorKey = sensor._id.toString();
+      
+      if (sensorMarkers.has(sensorKey)) {
+        // Update existing marker
+        const marker = sensorMarkers.get(sensorKey);
+        marker.setLatLng(position);
+        marker.setIcon(createSensorIcon(sensor));
+        
+        // Update popup content
+        const popupContent = createSensorPopupContent(sensor);
+        marker.setPopupContent(popupContent);
+        
+        // Update tooltip
+        const tooltipContent = createSensorTooltipContent(sensor);
+        marker.setTooltipContent(tooltipContent);
+      } else {
+        // Create new marker
+        const marker = L.marker(position, {
+          icon: createSensorIcon(sensor)
+        }).addTo(map);
+        
+        // Popup content
+        const popupContent = createSensorPopupContent(sensor);
+        marker.bindPopup(popupContent, {
+          maxWidth: 300,
+          className: 'sensor-popup'
+        });
+        
+        // Tooltip (hover)
+        const tooltipContent = createSensorTooltipContent(sensor);
+        marker.bindTooltip(tooltipContent, {
+          permanent: false,
+          direction: 'top',
+          offset: [0, -20]
+        });
+        
+        sensorMarkers.set(sensorKey, marker);
       }
     }
 
@@ -1026,7 +1206,7 @@
           const data = JSON.parse(event.data);
           
           if (data.type === 'initial_data') {
-            console.log('Received initial data:', data.count, 'ships', data.deviceCount || 0, 'devices');
+            console.log('Received initial data:', data.count, 'ships', data.sensorCount || 0, 'sensors', data.deviceCount || 0, 'devices');
             
             // Clear existing markers and ships
             markers.forEach(marker => {
@@ -1035,10 +1215,15 @@
             deviceMarkers.forEach(marker => {
               map.removeLayer(marker);
             });
+            sensorMarkers.forEach(marker => {
+              map.removeLayer(marker);
+            });
             markers.clear();
             deviceMarkers.clear();
+            sensorMarkers.clear();
             ships.clear();
             devices.clear();
+            sensors.clear();
             selectedShip = null;
             
             // Process ships
@@ -1046,6 +1231,15 @@
               ships.set(ship.mmsi.toString(), ship);
               updateShipMarker(ship);
             });
+            
+            // Process sensors
+            if (data.sensors && Array.isArray(data.sensors)) {
+              data.sensors.forEach(sensor => {
+                const sensorKey = sensor._id.toString();
+                sensors.set(sensorKey, sensor);
+                updateSensorMarker(sensor);
+              });
+            }
             
             // Process devices
             if (data.devices && Array.isArray(data.devices)) {
@@ -1059,11 +1253,16 @@
             updateSidebar();
             updateStats();
             
-            // Auto-zoom to show all ships and devices
+            // Auto-zoom to show all ships, sensors and devices
             const bounds = [];
             ships.forEach(ship => {
               if (ship.lat && ship.lon) {
                 bounds.push([ship.lat, ship.lon]);
+              }
+            });
+            sensors.forEach(sensor => {
+              if (sensor.latitude && sensor.longitude) {
+                bounds.push([sensor.latitude, sensor.longitude]);
               }
             });
             devices.forEach(device => {

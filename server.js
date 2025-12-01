@@ -50,6 +50,23 @@ async function connectMongoDB() {
   }
 }
 
+// Fungsi untuk mengambil semua sensor dari database
+async function getAllSensors() {
+  if (!sensorsCollection) {
+    console.log(`[${getTimeStamp()}] ⚠️  Sensors collection not available`);
+    return [];
+  }
+
+  try {
+    const sensors = await sensorsCollection.find({ activeStatus: true }).toArray();
+    console.log(`[${getTimeStamp()}] ✓ Retrieved ${sensors.length} active sensors from database`);
+    return sensors;
+  } catch (error) {
+    console.error(`[${getTimeStamp()}] ❌ Error fetching sensors:`, error.message);
+    return [];
+  }
+}
+
 // Fungsi untuk validasi sensor berdasarkan app_key dan user_key dari sensors table
 async function validateSensor(appKey, userKey) {
   // Jika validasi device dinonaktifkan (untuk debugging)
@@ -316,12 +333,15 @@ wss.on('connection', (ws, req) => {
         if (data.clientType === 'viewer') {
           ws.isValidated = true;
           const allShips = Array.from(shipsData.values());
+          const allSensors = await getAllSensors();
           ws.send(JSON.stringify({
             type: 'initial_data',
             ships: allShips,
-            count: allShips.length
+            sensors: allSensors,
+            count: allShips.length,
+            sensorCount: allSensors.length
           }));
-          console.log(`[${getTimeStamp()}] Sent ${allShips.length} ships to viewer`);
+          console.log(`[${getTimeStamp()}] Sent ${allShips.length} ships and ${allSensors.length} sensors to viewer`);
         }
         
         // Handle viewer-by-user (tidak perlu validasi, hanya simpan user_key)
@@ -330,14 +350,19 @@ wss.on('connection', (ws, req) => {
           ws.userKey = data.user_key;
           // Filter ships berdasarkan userId (bukan sensorId)
           const userShips = Array.from(shipsData.values()).filter(ship => ship.userId === data.user_key);
+          // Filter sensors berdasarkan userId
+          const allSensors = await getAllSensors();
+          const userSensors = allSensors.filter(sensor => sensor.userId === data.user_key);
           ws.send(JSON.stringify({
             type: 'initial_data',
             ships: userShips,
+            sensors: userSensors,
             count: userShips.length,
+            sensorCount: userSensors.length,
             filterType: 'viewer-by-user',
             userId: data.user_key
           }));
-          console.log(`[${getTimeStamp()}] Sent ${userShips.length} ships (filtered by user) to viewer-by-user`);
+          console.log(`[${getTimeStamp()}] Sent ${userShips.length} ships (filtered by user) and ${userSensors.length} sensors to viewer-by-user`);
         }
         
         // Handle viewer-by-device (tidak perlu validasi, hanya simpan app_key)
@@ -346,14 +371,19 @@ wss.on('connection', (ws, req) => {
           ws.appKey = data.app_key;
           // Filter ships berdasarkan app_key
           const deviceShips = Array.from(shipsData.values()).filter(ship => ship.sensorId === data.app_key);
+          // Get specific sensor
+          const allSensors = await getAllSensors();
+          const deviceSensor = allSensors.filter(sensor => sensor._id.toString() === data.app_key);
           ws.send(JSON.stringify({
             type: 'initial_data',
             ships: deviceShips,
+            sensors: deviceSensor,
             count: deviceShips.length,
+            sensorCount: deviceSensor.length,
             filterType: 'viewer-by-device',
             appKey: data.app_key
           }));
-          console.log(`[${getTimeStamp()}] Sent ${deviceShips.length} ships (filtered by device) to viewer-by-device`);
+          console.log(`[${getTimeStamp()}] Sent ${deviceShips.length} ships (filtered by device) and ${deviceSensor.length} sensors to viewer-by-device`);
         }
         
         // Handle sender - validasi sensor dengan app_key dan user_key
@@ -493,18 +523,23 @@ wss.on('connection', (ws, req) => {
       // Handle request untuk semua data kapal
       if (data.type === 'get_all_ships' && (ws.clientType === 'viewer' || ws.clientType === 'viewer-by-user' || ws.clientType === 'viewer-by-device')) {
         let allShips = Array.from(shipsData.values());
+        let allSensors = await getAllSensors();
         
         // Filter berdasarkan tipe viewer
         if (ws.clientType === 'viewer-by-user' && ws.userKey) {
           allShips = allShips.filter(ship => ship.userId === ws.userKey);
+          allSensors = allSensors.filter(sensor => sensor.userId === ws.userKey);
         } else if (ws.clientType === 'viewer-by-device' && ws.appKey) {
           allShips = allShips.filter(ship => ship.sensorId === ws.appKey);
+          allSensors = allSensors.filter(sensor => sensor._id.toString() === ws.appKey);
         }
         
         ws.send(JSON.stringify({
           type: 'all_ships',
           ships: allShips,
-          count: allShips.length
+          sensors: allSensors,
+          count: allShips.length,
+          sensorCount: allSensors.length
         }));
       }
       
